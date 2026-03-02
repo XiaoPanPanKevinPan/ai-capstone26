@@ -2,7 +2,7 @@
 
 NYCU AI Capstone 2026 Fall
 
-Spec: https://drive.google.com/file/d/1rdbRMXMCjqozzj0y5bLiu0itU2D9GrFc/view?usp=sharing
+Spec: https://drive.google.com/file/d/1R2M2fLBaT8iETkZSja0vNdlWh06UssEg/view?usp=sharing
 
 Slide: https://docs.google.com/presentation/d/1FSDUIIN-GM05lxHIfW1OII-CdiMmDhrn/edit?usp=sharing&ouid=114385544772538729562&rtpof=true&sd=true
 
