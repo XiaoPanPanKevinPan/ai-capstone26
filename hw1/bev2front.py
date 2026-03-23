@@ -36,7 +36,7 @@ class Projection(object):
               <-90deg, 0, 0>
         """
 
-        # Step 1: revert the points on top-view to world coordinates
+        # Step 1: revert the points on top-view to cam2's coordinates
         old_pixels = np.array(self.old_pixels)
 
         # - from [0~511, 0~511] to [-2.5~2.5, -2.5~2.5]
@@ -45,6 +45,8 @@ class Projection(object):
 
         # - insert z-coordinate such that (x, y) -> (x, y, -2.5)
         points_relToCam2 = np.insert(old_point_offsets, 2, -2.5, axis=1)
+
+        # Step 2: rotate the points to cam1's coordinates
 
         # - apply reverse rotation from pitch(theta), yaw(phi), and roll(gamma)
         rad_x = np.deg2rad(theta)
@@ -79,7 +81,7 @@ class Projection(object):
         print(points_rotated)
         print(points_relToCam1)
 
-        # Step 2: mimicking the pin-hole camera with matrix to project the points to front-view
+        # Step 3: mimicking the pin-hole camera with matrix to project the points to front-view
 
         # - check if any points are behind or exactly on the camera plane 
         #   (Z >= 0, since camera faces -Z)
@@ -146,8 +148,8 @@ if __name__ == "__main__":
 
     pitch_ang = -90
 
-    front_rgb = "bev_data/front2.png"
-    top_rgb = "bev_data/bev2.png"
+    front_rgb = "bev_data/front1.png"
+    top_rgb = "bev_data/bev1.png"
 
     # click the pixels on window
     img = cv2.imread(top_rgb, 1)
