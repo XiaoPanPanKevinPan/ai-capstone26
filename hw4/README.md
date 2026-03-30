@@ -8,38 +8,22 @@ In your original ai-capstone directory, `git pull` to get new `hw4` directory.
 ## Installation
 
 
-There are three ways to create your environment(choose one for your hw4):
+There are two ways to create your environment(choose one for your hw4):
 
 1. Create pip environment(Ubuntu)
 ```shell
 cd hw4
 # 安裝全部
-python venv -m venv
+curl -LsSf https://astral.sh/uv/install.sh | sh
 
-source .venv/bin/activate
-
-pip install -r requirements.txt
+uv sync
 
 # Task 1 with GUI
 python fk.py
 # Task 2 with GUI
 python ik.py
 ```
-2. Create and activate Conda environment, then install Python packages.(Ubuntu)
-```shell
-cd hw4
-# 建立 conda 環境
-conda env create -f environment.yml
-
-# 啟動環境
-conda activate AI_capstone
-
-# Task 1 with GUI
-python fk.py
-# Task 2 with GUI
-python ik.py
-```
-3. Using docker environment, then install Python packages.(Ubuntu/MacOS)
+2. Using docker environment, then install Python packages.(Ubuntu/MacOS)
 ```shell
 cd hw4
 # Task 1 without GUI

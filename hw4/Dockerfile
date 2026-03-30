@@ -64,11 +64,6 @@ COPY pyproject.toml uv.lock /workspace/hw4/
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --python ${VIRTUAL_ENV}
 
-RUN --mount=type=cache,target=/root/.cache/uv \
-    uv pip install --python ${VIRTUAL_ENV} \
-        "isaacsim[all,extscache]==5.1.0" \
-        --extra-index-url https://pypi.nvidia.com
-
 # Copy the rest of the source code
 COPY . /workspace/hw4
 
