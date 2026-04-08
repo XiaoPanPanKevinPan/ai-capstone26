@@ -9,6 +9,8 @@ from copy import deepcopy
 from scipy.spatial.transform import Rotation as R
 import time
 
+import random
+
 # ---------- Camera Intrinsics (Resolution 512x512, FOV 90) ----------
 # These parameters are derived from the Habitat pinhole camera model [cite: 26-27].
 IMG_W, IMG_H = 512, 512
@@ -157,7 +159,7 @@ def visualize_and_evaluate(reconstructed_pcd, predicted_cam_poses, gt_poses, arg
 
     # 1.1. Extract the points from predicted_cam_poses
     pred_lines.points = o3d.utility.Vector3dVector(
-        predicted_cam_poses[:, 0:3, 3] 
+        predicted_cam_poses[:, :3, 3] 
         # each in predicted_cam_poses is a 4x4 homogeneous transformation matrix
         #   $^{world} T _{cam's local coord}$
         # here, 
@@ -365,9 +367,10 @@ def reconstruct(args):
         final_transformation = None
 
         # 4. Execute Global Registration (RANSAC)
-        o3d.utility.random.seed(42)
+        random.seed(666)
         attempt = 0
-        while final_transformation is None and attempt < 20:
+        while final_transformation is None and attempt < 50:
+            o3d.utility.random.seed(random.randint(0, 100000))
             attempt += 1
             ransac_transformation = reconstruct__ransac(pcd_down, target_pcd_down, pcd_fpfh, target_fpfh, camera_poses, failed_attempt_in_seq)
             if ransac_transformation is None:
