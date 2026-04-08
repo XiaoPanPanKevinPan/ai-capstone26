@@ -130,7 +130,7 @@ def local_icp_algorithm(source_down, target_down, trans_init, threshold):
         source_down, target_down, threshold, trans_init,
         estimation_method=o3d.pipelines.registration.TransformationEstimationPointToPlane(),
         criteria=o3d.pipelines.registration.ICPConvergenceCriteria(
-            max_iteration=100,
+            max_iteration=500,
             # relative_fitness=0.0001,
             # relative_rmse=0.0001
         )
@@ -220,6 +220,7 @@ def cut_pcd_ceiling(pcd, height=0.8):
 
 def reconstruct(args):
     voxel_size = 0.10
+    voxel_size_for_display = 0.02
     rgb_dir = os.path.join(args.data_root, "rgb")
     depth_dir = os.path.join(args.data_root, "depth")
 
@@ -246,13 +247,13 @@ def reconstruct(args):
 
     camera_poses = [np.eye(4)]
     accumulated_pcd = o3d.geometry.PointCloud()
+    accumulated_for_display_pcd = o3d.geometry.PointCloud()
 
     # Reconstruction Loop [cite: 29-30]
-    target_pcd, target_fpfh = preprocess_point_cloud(
-        depth_image_to_point_cloud(rgb_files[0], depth_files[0]), 
-        voxel_size
-    )
-    accumulated_pcd += target_pcd
+    target_pcd = depth_image_to_point_cloud(rgb_files[0], depth_files[0])
+    accumulated_for_display_pcd += target_pcd
+    target_pcd_down, target_fpfh = preprocess_point_cloud(target_pcd, voxel_size)
+    accumulated_pcd += target_pcd_down
 
     for i in range(1, len(rgb_files)):
         print(f"Processing Frame {i}...")
@@ -261,13 +262,13 @@ def reconstruct(args):
         pcd = depth_image_to_point_cloud(rgb_files[i], depth_files[i])
 
         # 2. Preprocess (Voxel/FPFH/Normals)
-        pcd, pcd_fpfh = preprocess_point_cloud(pcd, voxel_size)
+        pcd_down, pcd_fpfh = preprocess_point_cloud(pcd, voxel_size)
 
         icp_transformation = camera_poses[-1]
         o3d.utility.random.seed(42)
 
         failed_attempt_in_seq = 0
-        for attempt in range(50):
+        for attempt in range(10):
             # 3. Execute Global Registration (RANSAC)
             step_movement_distance_bound = 0.25 * 1.5
             rotation_bound = 10 * 1.5 / 180 * np.pi
@@ -275,14 +276,14 @@ def reconstruct(args):
                 # while 10 is the default turn_left/turn_right angle in degrees
 
             ransac_result = o3d.pipelines.registration.registration_ransac_based_on_feature_matching(
-                source=pcd, target=target_pcd, 
+                source=pcd_down, target=target_pcd_down, 
                 source_feature=pcd_fpfh, target_feature=target_fpfh, 
                 mutual_filter=False,
                 max_correspondence_distance=step_movement_distance_bound * 2,
                 # estimation_method=o3d.pipelines.registration.TransformationEstimationPointToPoint(False),
                 # ransac_n=3, 
                 checkers=[o3d.pipelines.registration.CorrespondenceCheckerBasedOnEdgeLength(0.95)],
-                criteria=o3d.pipelines.registration.RANSACConvergenceCriteria(max_iteration=1000, confidence=0.9)
+                criteria=o3d.pipelines.registration.RANSACConvergenceCriteria(max_iteration=100000, confidence=0.9)
             )
 
             # 3.1. Check if the ransac result is good
@@ -325,7 +326,7 @@ def reconstruct(args):
                 -0.01
             ):
                 icp_transformation = local_icp_algorithm(
-                    pcd, target_pcd, 
+                    pcd_down, target_pcd_down, 
                     # camera_poses[-1], 
                     icp_transformation,
                     threshold=threshold 
@@ -364,14 +365,17 @@ def reconstruct(args):
         # 5. 6. 7. in case the ICP retrying is failed
         if attempt == 50:
             failed_attempt_in_seq += 1
+            print(f"=== There are {failed_attempt_in_seq} shots ignored in a row ===")
+
+            # 5. Update camera_poses, using the last one as the prediction
             camera_pose = camera_poses[-1]
+            camera_poses.append(camera_pose)
 
             # 6. prepare for next iteration with bigger bound (using the last camera's pcd_in_global)
-            target_pcd = cut_pcd_by_box(accumulated_pcd, camera_pose[:3, 3], radius=1 * (failed_attempt_in_seq + 1)) + pcd_in_global
-            target_pcd, target_fpfh = preprocess_point_cloud(target_pcd, voxel_size)
+            target_pcd = cut_pcd_by_box(accumulated_pcd, camera_pose[:3, 3], radius=1 * (failed_attempt_in_seq + 1)) + pcd_down_in_global
+            target_pcd_down, target_fpfh = preprocess_point_cloud(target_pcd, voxel_size)
 
-            # 7. accum pcd and optionally downsample accum to prevent OOM
-            # accumulated_pcd += pcd_in_global # needless to re-add
+            # 7. optionally downsample accum to prevent OOM
             if i % 50 == 0 or i == len(rgb_files) - 1:
                 accumulated_pcd = accumulated_pcd.voxel_down_sample(voxel_size)
         
@@ -385,25 +389,30 @@ def reconstruct(args):
         camera_poses.append(camera_pose)
 
         # 6. prepare for next iteration
-        pcd_in_global = deepcopy(pcd)
-        pcd_in_global.transform(camera_pose)
+        pcd_down_in_global = deepcopy(pcd_down)
+        pcd_down_in_global.transform(camera_pose)
 
-        target_pcd = cut_pcd_by_box(accumulated_pcd, camera_pose[:3, 3], radius=1) + pcd_in_global
-        target_pcd, target_fpfh = preprocess_point_cloud(target_pcd, voxel_size)
+        target_pcd = cut_pcd_by_box(accumulated_pcd, camera_pose[:3, 3], radius=1) + pcd_down_in_global
+        target_pcd_down, target_fpfh = preprocess_point_cloud(target_pcd, voxel_size)
 
         # 7. accum pcd and optionally downsample accum to prevent OOM
-        accumulated_pcd += pcd_in_global
+        accumulated_pcd += pcd_down_in_global
+        pcd_in_global = deepcopy(pcd)
+        pcd_in_global.transform(camera_pose)
+        accumulated_for_display_pcd += pcd_in_global
+
         if i % 50 == 0 or i == len(rgb_files) - 1:
             accumulated_pcd = accumulated_pcd.voxel_down_sample(voxel_size)
+            accumulated_for_display_pcd = accumulated_for_display_pcd.voxel_down_sample(voxel_size_for_display)
 
     camera_poses = np.stack(camera_poses)
     # accumulated_pcd = accumulated_pcd.voxel_down_sample(voxel_size_thres)
 
     # TODO: Post-processing: remove the ceiling [cite: 37]
     # remove the ceiling by cutting the y axis for y > 0.5
-    accumulated_pcd_no_ceiling = cut_pcd_ceiling(accumulated_pcd, height=0.5)
+    accumulated_pcd_no_ceiling = cut_pcd_ceiling(accumulated_for_display_pcd, height=0.5)
     
-    return accumulated_pcd_no_ceiling, camera_poses, gt_poses, accumulated_pcd
+    return accumulated_pcd_no_ceiling, camera_poses, gt_poses, accumulated_for_display_pcd
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -418,5 +427,5 @@ if __name__ == '__main__':
     result_pcd, pred_poses, gt_poses, result_pcd_w_ceiling = reconstruct(args)
     
     print(f"Total execution time: {time.time() - start_time:.2f}s") # 
-    visualize_and_evaluate(result_pcd_w_ceiling, pred_poses, gt_poses, args)
     visualize_and_evaluate(result_pcd, pred_poses, gt_poses, args)
+    # visualize_and_evaluate(result_pcd_w_ceiling, pred_poses, gt_poses, args)
