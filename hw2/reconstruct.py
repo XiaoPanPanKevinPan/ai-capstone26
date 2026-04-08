@@ -218,7 +218,7 @@ def cut_pcd_ceiling(pcd, height=0.8):
     return pcd.crop(new_bbox)
 
 def reconstruct(args):
-    voxel_size = 0.10
+    voxel_size = 0.15
     rgb_dir = os.path.join(args.data_root, "rgb")
     depth_dir = os.path.join(args.data_root, "depth")
 
@@ -276,7 +276,7 @@ def reconstruct(args):
             # estimation_method=o3d.pipelines.registration.TransformationEstimationPointToPoint(False),
             # ransac_n=3, 
             checkers=[o3d.pipelines.registration.CorrespondenceCheckerBasedOnEdgeLength(0.95)],
-            criteria=o3d.pipelines.registration.RANSACConvergenceCriteria(max_iteration=1000, confidence=0.5)
+            criteria=o3d.pipelines.registration.RANSACConvergenceCriteria(max_iteration=1000, confidence=0.8)
         )
 
         # 4. Execute Local Registration (ICP - Task 2)
@@ -299,7 +299,7 @@ def reconstruct(args):
         )
 
         # 4.2. If ransac is good, use it; otherwise, fallback to last pose
-        if      ransac_result.fitness > 0.5 \
+        if      ransac_result.fitness > 0.8 \
             and ransac_translate_dist < step_movement_distance_bound \
             and ransac_rotate < rotation_bound:
 
@@ -307,20 +307,27 @@ def reconstruct(args):
             # and the distance from last step is less than step_movement_distance_bound
             # and the rotation is less than rotation_bound
 
-            init_transformation = ransac_result.transformation
+            transformation = ransac_result.transformation
         else:
             print("- RANSAC failed, using previous pose")
 
-        local_icp_result = local_icp_algorithm(
-            pcd, target_pcd, 
-            # camera_poses[-1], 
-            init_transformation,
-            threshold=0.15 # at least (1+1+1)**0.5 / 2 * voxel_size
-        )
+        # start from at least (1+1+1)**0.5 / 2 * voxel_size \approx 0.9 voxelsize
+        # for threshold in [0.15, 0.14, 0.13, 0.12, 0.11, 0.10]:
+        for threshold in np.arange(
+            max(0.9 * voxel_size, 0.15), 
+            min(voxel_size, 0.10), 
+            -0.01
+        ):
+            transformation = local_icp_algorithm(
+                pcd, target_pcd, 
+                # camera_poses[-1], 
+                transformation,
+                threshold=threshold 
+            ).transformation
         
         # 5. Update camera_poses
         # camera_pose = camera_poses[-1] @ local_icp_result.transformation
-        camera_pose = local_icp_result.transformation
+        camera_pose = transformation
         camera_poses.append(camera_pose)
 
         # 6. prepare for next iteration
