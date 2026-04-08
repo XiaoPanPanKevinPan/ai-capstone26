@@ -18,6 +18,13 @@ FY = (IMG_H / 2.0) / np.tan(FOV / 2.0)
 CX, CY = IMG_W / 2.0, IMG_H / 2.0
 DEPTH_SCALE = 1 / 10 * 255 # the same as load.py
 
+# --------------------------- Assumptions ---------------------------
+ASSUMPTION_TOLERANCE = 1.5
+STEP_MOVEMENT_DISTANCE_BOUND = 0.25 * ASSUMPTION_TOLERANCE
+ROTATION_BOUND = np.deg2rad(10 * ASSUMPTION_TOLERANCE)
+    # 0.25 is the default move_forward distance in load.py
+    # while 10 is the default turn_left/turn_right angle in degrees
+
 # I think it should be renamed as RGBD_to_point_cloud, but I'll just keep it
 def depth_image_to_point_cloud(rgb_image: str, depth_image: str):
     """
@@ -130,9 +137,9 @@ def local_icp_algorithm(source_down, target_down, trans_init, threshold):
         source_down, target_down, threshold, trans_init,
         estimation_method=o3d.pipelines.registration.TransformationEstimationPointToPlane(),
         criteria=o3d.pipelines.registration.ICPConvergenceCriteria(
-            max_iteration=500,
-            # relative_fitness=0.0001,
-            # relative_rmse=0.0001
+            max_iteration=50,
+            relative_fitness=0.001, # 1e-6 by default
+            relative_rmse=0.001 # 1e-6 by default
         )
     )
     
@@ -218,8 +225,97 @@ def cut_pcd_ceiling(pcd, height=0.8):
     new_bbox = o3d.geometry.AxisAlignedBoundingBox(min_bound, max_bound)
     return pcd.crop(new_bbox)
 
+def rotation_between_two_transformation_mat(mat1, mat2): # in rad
+    return np.arccos(
+        np.clip(
+            (np.trace(
+                mat1[:3, :3].T 
+                @ mat2[:3, :3]
+            ) - 1.0) / 2.0, 
+            -1.0, 
+            1.0
+        )
+    )
+
+def reconstruct__icp(pcd_down, target_pcd_down, init_transformation, camera_poses, voxel_size, failed_attempt_in_seq):
+    icp_transformation = init_transformation
+
+    # start from at least (1+1+1)**0.5 / 2 * voxel_size \approx 0.9 voxelsize
+    # end at most 0.04 since 10m / 255 \approx 0.039
+    for threshold in np.arange(
+        max(0.9 * voxel_size, 0.15), 
+        min(voxel_size, 0.08), 
+        -0.01
+    ):
+        icp_result = local_icp_algorithm(
+            pcd_down, target_pcd_down, 
+            icp_transformation,
+            threshold=threshold 
+        )
+
+        # If fitness is 0, it means ICP found absolutely zero correspondences
+        if icp_result.fitness == 0:
+            print(f"- ICP failed at threshold {threshold}")
+            return None
+            
+        icp_transformation = icp_result.transformation
+
+    # x.0. if the transformation matrix is the same, it means ICP failed
+    if np.array_equal(icp_transformation, init_transformation):
+        print(f"- ICP result == init_transformation, failed")
+        return None
+
+    # x.1. get icp result traits
+    icp_translate_dist = np.linalg.norm(
+        icp_transformation[:3, 3] 
+        - camera_poses[-1][:3, 3]
+    )
+    icp_rotate = rotation_between_two_transformation_mat(icp_transformation, camera_poses[-1])
+
+    # x.2. If the result meets assumptions, use it; otherwise, fallback to last pose
+    if  icp_translate_dist < STEP_MOVEMENT_DISTANCE_BOUND * (failed_attempt_in_seq + 1) \
+        and icp_rotate < ROTATION_BOUND * (failed_attempt_in_seq + 1):
+        return icp_transformation
+
+    else:
+        print(f"- ICP result is not good, retrying...")
+        print(f"-- icp_translate_dist: {icp_translate_dist}")
+        print(f"-- icp_rotate: {icp_rotate}")
+
+def reconstruct__ransac(pcd_down, target_pcd_down, pcd_fpfh, target_fpfh, camera_poses, failed_attempt_in_seq):
+    ransac_result = o3d.pipelines.registration.registration_ransac_based_on_feature_matching(
+        source=pcd_down, target=target_pcd_down, 
+        source_feature=pcd_fpfh, target_feature=target_fpfh, 
+        mutual_filter=False,
+        max_correspondence_distance=STEP_MOVEMENT_DISTANCE_BOUND * (failed_attempt_in_seq + 2),
+        # estimation_method=o3d.pipelines.registration.TransformationEstimationPointToPoint(False),
+        # ransac_n=3, 
+        checkers=[o3d.pipelines.registration.CorrespondenceCheckerBasedOnEdgeLength(0.95)],
+        criteria=o3d.pipelines.registration.RANSACConvergenceCriteria(max_iteration=100000, confidence=0.9)
+    )
+
+    # x.1. Check if the ransac result is good
+    ransac_translate_dist = np.linalg.norm(
+        ransac_result.transformation[:3, 3] 
+        - camera_poses[-1][:3, 3]
+    )
+    ransac_rotate = rotation_between_two_transformation_mat(ransac_result.transformation, camera_poses[-1])
+
+    # x.2. If ransac is good, use it; otherwise, fallback to last pose
+    if      ransac_result.fitness > 0.8 \
+        and ransac_translate_dist < STEP_MOVEMENT_DISTANCE_BOUND * (failed_attempt_in_seq + 1) \
+        and ransac_rotate < ROTATION_BOUND * (failed_attempt_in_seq + 1):
+
+        # i.e., if confident 
+        # and the distance from last step is small as expected
+        # and the rotation is small as expected
+
+        return ransac_result.transformation
+    else:
+        print("- RANSAC failed")
+
 def reconstruct(args):
-    voxel_size = 0.10
+    voxel_size = 0.15
     voxel_size_for_display = 0.02
     rgb_dir = os.path.join(args.data_root, "rgb")
     depth_dir = os.path.join(args.data_root, "depth")
@@ -255,6 +351,7 @@ def reconstruct(args):
     target_pcd_down, target_fpfh = preprocess_point_cloud(target_pcd, voxel_size)
     accumulated_pcd += target_pcd_down
 
+    failed_attempt_in_seq = 0
     for i in range(1, len(rgb_files)):
         print(f"Processing Frame {i}...")
         # TODO: Implement the full pipeline:
@@ -264,143 +361,60 @@ def reconstruct(args):
         # 2. Preprocess (Voxel/FPFH/Normals)
         pcd_down, pcd_fpfh = preprocess_point_cloud(pcd, voxel_size)
 
-        icp_transformation = camera_poses[-1]
+        # 3/4. Registration
+        final_transformation = None
+
+        # 4. Execute Global Registration (RANSAC)
         o3d.utility.random.seed(42)
+        attempt = 0
+        while final_transformation is None and attempt < 20:
+            attempt += 1
+            ransac_transformation = reconstruct__ransac(pcd_down, target_pcd_down, pcd_fpfh, target_fpfh, camera_poses, failed_attempt_in_seq)
+            if ransac_transformation is None:
+                continue
+            final_transformation = reconstruct__icp(pcd_down, target_pcd_down, ransac_transformation, camera_poses, voxel_size, failed_attempt_in_seq)
 
-        failed_attempt_in_seq = 0
-        for attempt in range(10):
-            # 3. Execute Global Registration (RANSAC)
-            step_movement_distance_bound = 0.25 * 1.5
-            rotation_bound = 10 * 1.5 / 180 * np.pi
-                # 0.25 is the default move_forward distance
-                # while 10 is the default turn_left/turn_right angle in degrees
+        # 3. Execute Local Registration (ICP - Task 2)
+        if final_transformation is None:
+            print("- Too many ransac+icp failed, retrying with last pose as init for icp...")
+            init_transformation = camera_poses[-1]
+            final_transformation = reconstruct__icp(pcd_down, target_pcd_down, init_transformation, camera_poses, voxel_size, failed_attempt_in_seq)
 
-            ransac_result = o3d.pipelines.registration.registration_ransac_based_on_feature_matching(
-                source=pcd_down, target=target_pcd_down, 
-                source_feature=pcd_fpfh, target_feature=target_fpfh, 
-                mutual_filter=False,
-                max_correspondence_distance=step_movement_distance_bound * 2,
-                # estimation_method=o3d.pipelines.registration.TransformationEstimationPointToPoint(False),
-                # ransac_n=3, 
-                checkers=[o3d.pipelines.registration.CorrespondenceCheckerBasedOnEdgeLength(0.95)],
-                criteria=o3d.pipelines.registration.RANSACConvergenceCriteria(max_iteration=100000, confidence=0.9)
-            )
-
-            # 3.1. Check if the ransac result is good
-            ransac_translate_dist = np.linalg.norm(
-                ransac_result.transformation[:3, 3] 
-                - camera_poses[-1][:3, 3]
-            )
-            ransac_rotate = np.arccos(
-                np.clip(
-                    (np.trace(
-                        ransac_result.transformation[:3, :3].T 
-                        @ camera_poses[-1][:3, :3]
-                    ) - 1.0) / 2.0, 
-                    -1.0, 
-                    1.0
-                )
-            )
-
-            # 3.2. If ransac is good, use it; otherwise, fallback to last pose
-            if      ransac_result.fitness > 0.8 \
-                and ransac_translate_dist < step_movement_distance_bound \
-                and ransac_rotate < rotation_bound:
-
-                # i.e., if confident 
-                # and the distance from last step is small as expected
-                # and the rotation is small as expected
-
-                icp_transformation = ransac_result.transformation
-            else:
-                print("- RANSAC failed, using previous pose")
-                icp_transformation = camera_poses[-1]
-
-            # 4. Execute Local Registration (ICP - Task 2)
-
-            # start from at least (1+1+1)**0.5 / 2 * voxel_size \approx 0.9 voxelsize
-            # for threshold in [0.15, 0.14, 0.13, 0.12, 0.11, 0.10]:
-            for threshold in np.arange(
-                max(0.9 * voxel_size, 0.15), 
-                min(voxel_size, 0.10), 
-                -0.01
-            ):
-                icp_transformation = local_icp_algorithm(
-                    pcd_down, target_pcd_down, 
-                    # camera_poses[-1], 
-                    icp_transformation,
-                    threshold=threshold 
-                ).transformation
-
-            # 4.1. check if the icp result is good
-            icp_translate_dist = np.linalg.norm(
-                icp_transformation[:3, 3] 
-                - camera_poses[-1][:3, 3]
-            )
-            icp_rotate = np.arccos(
-                np.clip(
-                    (np.trace(
-                        icp_transformation[:3, :3].T 
-                        @ camera_poses[-1][:3, :3]
-                    ) - 1.0) / 2.0, 
-                    -1.0, 
-                    1.0
-                )
-            )
-
-            # 3.2. If ransac is good, use it; otherwise, fallback to last pose
-            if      icp_translate_dist < step_movement_distance_bound \
-                and icp_rotate < rotation_bound:
-
-                # i.e., if 
-                # the distance from last step is small as expected
-                # and the rotation is small as expected
-
-                break
-            else:
-                print(f"- ICP result is not good, {'retrying' if attempt != 49 else 'ignored'}...")
-                print(f"-- icp_translate_dist: {icp_translate_dist}")
-                print(f"-- icp_rotate: {icp_rotate}")
-
-        # 5. 6. 7. in case the ICP retrying is failed
-        if attempt == 50:
+        # in case the retrying is failed
+        if final_transformation is None:
             failed_attempt_in_seq += 1
             print(f"=== There are {failed_attempt_in_seq} shots ignored in a row ===")
 
-            # 5. Update camera_poses, using the last one as the prediction
-            camera_pose = camera_poses[-1]
-            camera_poses.append(camera_pose)
-
-            # 6. prepare for next iteration with bigger bound (using the last camera's pcd_in_global)
-            target_pcd = cut_pcd_by_box(accumulated_pcd, camera_pose[:3, 3], radius=1 * (failed_attempt_in_seq + 1)) + pcd_down_in_global
-            target_pcd_down, target_fpfh = preprocess_point_cloud(target_pcd, voxel_size)
-
-            # 7. optionally downsample accum to prevent OOM
-            if i % 50 == 0 or i == len(rgb_files) - 1:
-                accumulated_pcd = accumulated_pcd.voxel_down_sample(voxel_size)
-        
-            continue
-
-        failed_attempt_in_seq = 0
+        else:
+            failed_attempt_in_seq = 0
         
         # 5. Update camera_poses
         # camera_pose = camera_poses[-1] @ local_icp_result.transformation
-        camera_pose = icp_transformation
+        camera_pose = final_transformation if final_transformation is not None \
+            else camera_poses[-1] # fallback to last pose est
         camera_poses.append(camera_pose)
 
         # 6. prepare for next iteration
-        pcd_down_in_global = deepcopy(pcd_down)
-        pcd_down_in_global.transform(camera_pose)
+        if final_transformation is not None:
+            pcd_down_in_global = deepcopy(pcd_down)
+            pcd_down_in_global.transform(final_transformation)
 
-        target_pcd = cut_pcd_by_box(accumulated_pcd, camera_pose[:3, 3], radius=1) + pcd_down_in_global
+        target_pcd = cut_pcd_by_box(
+            accumulated_pcd, 
+            camera_pose[:3, 3], 
+            radius=1 * (failed_attempt_in_seq + 1)
+        ) + pcd_down_in_global
+
         target_pcd_down, target_fpfh = preprocess_point_cloud(target_pcd, voxel_size)
+        
+        # 7. accum pcd
+        if final_transformation is not None:
+            accumulated_pcd += pcd_down_in_global
+            pcd_in_global = deepcopy(pcd)
+            pcd_in_global.transform(final_transformation)
+            accumulated_for_display_pcd += pcd_in_global
 
-        # 7. accum pcd and optionally downsample accum to prevent OOM
-        accumulated_pcd += pcd_down_in_global
-        pcd_in_global = deepcopy(pcd)
-        pcd_in_global.transform(camera_pose)
-        accumulated_for_display_pcd += pcd_in_global
-
+        # 8. optionally downsample accum to prevent OOM
         if i % 50 == 0 or i == len(rgb_files) - 1:
             accumulated_pcd = accumulated_pcd.voxel_down_sample(voxel_size)
             accumulated_for_display_pcd = accumulated_for_display_pcd.voxel_down_sample(voxel_size_for_display)
