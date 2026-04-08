@@ -181,9 +181,15 @@ def visualize_and_evaluate(reconstructed_pcd, predicted_cam_poses, gt_poses, arg
                                       window_name=f"Floor {args.floor} Reconstruction")
     return mean_l2_error
 
+def cut_pcd(pcd, center, radius=2):
+    min_bound = center - np.array([radius] * 3)
+    max_bound = center + np.array([radius] * 3)
+    bbox = o3d.geometry.AxisAlignedBoundingBox(min_bound, max_bound)
+    return pcd.crop(bbox)
+
 def reconstruct(args):
-    voxel_size = 0.10
-    voxel_size_for_display = 0.02
+    voxel_size = 0.20                           # for threshold and display
+    voxel_size_in_progress = voxel_size / 2     # prevent loosing too much info
     rgb_dir = os.path.join(args.data_root, "rgb")
     depth_dir = os.path.join(args.data_root, "depth")
 
@@ -212,9 +218,11 @@ def reconstruct(args):
     accumulated_pcd = o3d.geometry.PointCloud()
 
     # Reconstruction Loop [cite: 29-30]
-    prev_pcd = depth_image_to_point_cloud(rgb_files[0], depth_files[0])
-    prev_pcd_down, prev_pcd_fpfh = preprocess_point_cloud(prev_pcd, voxel_size)
-    accumulated_pcd += prev_pcd_down
+    target_pcd, target_fpfh = preprocess_point_cloud(
+        depth_image_to_point_cloud(rgb_files[0], depth_files[0]), 
+        voxel_size_in_progress
+    )
+    accumulated_pcd += target_pcd
 
     for i in range(1, len(rgb_files)):
         print(f"Processing Frame {i}...")
@@ -223,42 +231,54 @@ def reconstruct(args):
         pcd = depth_image_to_point_cloud(rgb_files[i], depth_files[i])
 
         # 2. Preprocess (Voxel/FPFH/Normals)
-        pcd_down, pcd_fpfh = preprocess_point_cloud(pcd, voxel_size)
+        pcd, pcd_fpfh = preprocess_point_cloud(pcd, voxel_size_in_progress)
 
         # 3. Execute Global Registration (RANSAC)
-        radius_ransac = voxel_size * 5.0
-        distance_ransac = voxel_size * 1.5 
-        ransac_result = o3d.pipelines.registration.registration_ransac_based_on_feature_matching(
-            source=pcd_down, target=prev_pcd_down, 
-            source_feature=pcd_fpfh, target_feature=prev_pcd_fpfh, 
-            mutual_filter=True,
-            max_correspondence_distance=distance_ransac,
-            # estimation_method=o3d.pipelines.registration.TransformationEstimationPointToPoint(False),
-            # ransac_n=3, 
-            checkers=[o3d.pipelines.registration.CorrespondenceCheckerBasedOnEdgeLength(0.9)],
-            # criteria=o3d.pipelines.registration.RANSACConvergenceCriteria(max_iteration=100000, confidence=0.999)
-        )
+        # step_movement_distance_bound = 1.50 
+        #     # 0.25 is the default move_forward distance
+        #     # while 10 is the default turn_left/turn_right angle in degrees
+        # ransac_result = o3d.pipelines.registration.registration_ransac_based_on_feature_matching(
+        #     source=pcd_down, target=prev_pcd_down, 
+        #     source_feature=pcd_fpfh, target_feature=prev_pcd_fpfh, 
+        #     mutual_filter=False,
+        #     max_correspondence_distance=step_movement_distance_bound,
+        #     # estimation_method=o3d.pipelines.registration.TransformationEstimationPointToPoint(False),
+        #     # ransac_n=3, 
+        #     checkers=[o3d.pipelines.registration.CorrespondenceCheckerBasedOnEdgeLength(0.9)],
+        #     # criteria=o3d.pipelines.registration.RANSACConvergenceCriteria(max_iteration=100000, confidence=0.999)
+        # )
 
         # 4. Execute Local Registration (ICP - Task 2)
-        local_icp_result = local_icp_algorithm(pcd_down, prev_pcd_down, ransac_result.transformation, distance_ransac)
-        # local_icp_result = local_icp_algorithm(pcd_down, prev_pcd_down, np.eye(4), 0.15)
+        # local_icp_result = local_icp_algorithm(
+        #     pcd_down, prev_pcd_down, 
+        #     ransac_result.transformation, 
+        #     threshold=voxel_size_for_display
+        # )
+        local_icp_result = local_icp_algorithm(
+            pcd, target_pcd, 
+            camera_poses[-1], 
+            threshold=voxel_size
+        )
         
-        # 5. Update camera_poses and accumulate points
-        camera_pose = camera_poses[-1] @ local_icp_result.transformation
+        # 5. Update camera_poses
+        # camera_pose = camera_poses[-1] @ local_icp_result.transformation
+        camera_pose = local_icp_result.transformation
         camera_poses.append(camera_pose)
 
+        # 6. prepare for next iteration
         pcd_in_global = deepcopy(pcd)
         pcd_in_global.transform(camera_pose)
+
+        target_pcd = cut_pcd(accumulated_pcd, camera_pose[:3, 3]) + pcd_in_global
+        target_pcd, target_fpfh = preprocess_point_cloud(target_pcd, voxel_size_in_progress)
+
+        # 7. accum pcd and optionally downsample accum to prevent OOM
         accumulated_pcd += pcd_in_global
-
-        # Forcefully downsample to prevent OOM and infinite point cloud expansion
-        if i % 30 == 0 or i + 1 == len(rgb_files):
-            accumulated_pcd = accumulated_pcd.voxel_down_sample(voxel_size_for_display)
-
-        prev_pcd = pcd
-        prev_pcd_down, prev_pcd_fpfh = pcd_down, pcd_fpfh
+        if i % 50 == 0:
+            accumulated_pcd = accumulated_pcd.voxel_down_sample(voxel_size_in_progress)
 
     camera_poses = np.stack(camera_poses)
+    accumulated_pcd = accumulated_pcd.voxel_down_sample(voxel_size)
 
     # TODO: Post-processing: remove the ceiling [cite: 37]
     # remove the ceiling by cutting the y axis for y > 0.8
