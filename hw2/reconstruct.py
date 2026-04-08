@@ -151,7 +151,7 @@ def visualize_and_evaluate(reconstructed_pcd, predicted_cam_poses, gt_poses, arg
 
     # 2.1. Extract the points from gt_poses
     gt_lines.points = o3d.utility.Vector3dVector(
-        gt_poses[:, 0:3, 3]
+        gt_poses[1:, 0:3, 3] - gt_poses[0, 0:3, 3]
     )
 
     # 2.2. Connect each pair of points with their indeces
@@ -181,15 +181,23 @@ def visualize_and_evaluate(reconstructed_pcd, predicted_cam_poses, gt_poses, arg
                                       window_name=f"Floor {args.floor} Reconstruction")
     return mean_l2_error
 
-def cut_pcd(pcd, center, radius=2):
+def cut_pcd_by_box(pcd, center, radius=2):
     min_bound = center - np.array([radius] * 3)
     max_bound = center + np.array([radius] * 3)
     bbox = o3d.geometry.AxisAlignedBoundingBox(min_bound, max_bound)
     return pcd.crop(bbox)
 
+def cut_pcd_ceiling(pcd, height=0.8):
+    bbox = pcd.get_axis_aligned_bounding_box()
+    min_bound = bbox.get_min_bound()
+    max_bound = bbox.get_max_bound()
+    max_bound[1] = height                       # cut Y (height)
+    new_bbox = o3d.geometry.AxisAlignedBoundingBox(min_bound, max_bound)
+    return pcd.crop(new_bbox)
+
 def reconstruct(args):
-    voxel_size = 0.20                           # for threshold and display
-    voxel_size_in_progress = voxel_size / 2     # prevent loosing too much info
+    voxel_size_thres = 0.25                 # for threshold and display
+    voxel_size = voxel_size_thres / 2
     rgb_dir = os.path.join(args.data_root, "rgb")
     depth_dir = os.path.join(args.data_root, "depth")
 
@@ -220,7 +228,7 @@ def reconstruct(args):
     # Reconstruction Loop [cite: 29-30]
     target_pcd, target_fpfh = preprocess_point_cloud(
         depth_image_to_point_cloud(rgb_files[0], depth_files[0]), 
-        voxel_size_in_progress
+        voxel_size
     )
     accumulated_pcd += target_pcd
 
@@ -231,7 +239,7 @@ def reconstruct(args):
         pcd = depth_image_to_point_cloud(rgb_files[i], depth_files[i])
 
         # 2. Preprocess (Voxel/FPFH/Normals)
-        pcd, pcd_fpfh = preprocess_point_cloud(pcd, voxel_size_in_progress)
+        pcd, pcd_fpfh = preprocess_point_cloud(pcd, voxel_size)
 
         # 3. Execute Global Registration (RANSAC)
         # step_movement_distance_bound = 1.50 
@@ -257,7 +265,7 @@ def reconstruct(args):
         local_icp_result = local_icp_algorithm(
             pcd, target_pcd, 
             camera_poses[-1], 
-            threshold=voxel_size
+            threshold=voxel_size_thres
         )
         
         # 5. Update camera_poses
@@ -269,26 +277,22 @@ def reconstruct(args):
         pcd_in_global = deepcopy(pcd)
         pcd_in_global.transform(camera_pose)
 
-        target_pcd = cut_pcd(accumulated_pcd, camera_pose[:3, 3]) + pcd_in_global
-        target_pcd, target_fpfh = preprocess_point_cloud(target_pcd, voxel_size_in_progress)
+        target_pcd = cut_pcd_by_box(accumulated_pcd, camera_pose[:3, 3]) + pcd_in_global
+        target_pcd, target_fpfh = preprocess_point_cloud(target_pcd, voxel_size)
 
         # 7. accum pcd and optionally downsample accum to prevent OOM
         accumulated_pcd += pcd_in_global
-        if i % 50 == 0:
-            accumulated_pcd = accumulated_pcd.voxel_down_sample(voxel_size_in_progress)
+        if i % 50 == 0 or i == len(rgb_files) - 1:
+            accumulated_pcd = accumulated_pcd.voxel_down_sample(voxel_size)
 
     camera_poses = np.stack(camera_poses)
-    accumulated_pcd = accumulated_pcd.voxel_down_sample(voxel_size)
+    # accumulated_pcd = accumulated_pcd.voxel_down_sample(voxel_size_thres)
 
     # TODO: Post-processing: remove the ceiling [cite: 37]
-    # remove the ceiling by cutting the y axis for y > 0.8
-    # bbox = accumulated_pcd.get_axis_aligned_bounding_box()
-    # max_bound = bbox.get_max_bound()
-    # max_bound[1] = 0.8  # Limit the maximum Y (height) to 0.8
-    # bbox.max_bound = max_bound
-    # accumulated_pcd = accumulated_pcd.crop(bbox)
+    # remove the ceiling by cutting the y axis for y > 0.5
+    accumulated_pcd_no_ceiling = cut_pcd_ceiling(accumulated_pcd, height=0.5)
     
-    return accumulated_pcd, camera_poses, gt_poses
+    return accumulated_pcd_no_ceiling, camera_poses, gt_poses, accumulated_pcd
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -300,7 +304,8 @@ if __name__ == '__main__':
     args.data_root = f"data_collection/first_floor/" if args.floor == 1 else f"data_collection/second_floor/"
 
     start_time = time.time()
-    result_pcd, pred_poses, gt_poses = reconstruct(args)
+    result_pcd, pred_poses, gt_poses, result_pcd_w_ceiling = reconstruct(args)
     
     print(f"Total execution time: {time.time() - start_time:.2f}s") # 
+    visualize_and_evaluate(result_pcd_w_ceiling, pred_poses, gt_poses, args)
     visualize_and_evaluate(result_pcd, pred_poses, gt_poses, args)
