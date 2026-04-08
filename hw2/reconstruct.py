@@ -72,14 +72,20 @@ def preprocess_point_cloud(pcd, voxel_size):
     #    ref: https://learnopencv.com/iterative-closest-point-icp-explained/
     radius_estNormal = voxel_size * 2.5
     pcd_down.estimate_normals(
-        search_param=o3d.geometry.KDTreeSearchParamHybrid(radius=radius_estNormal, max_nn=30)
+        search_param=o3d.geometry.KDTreeSearchParamHybrid(
+            radius=radius_estNormal, 
+            max_nn=30 # nearest neightbours
+        )
     )
     
     # Compute FPFH features for Global Registration [cite: 30]
     radius_feature = voxel_size * 5.0
     pcd_fpfh = o3d.pipelines.registration.compute_fpfh_feature(
         pcd_down,
-        o3d.geometry.KDTreeSearchParamHybrid(radius=radius_feature, max_nn=100)
+        o3d.geometry.KDTreeSearchParamHybrid(
+            radius=radius_feature, 
+            max_nn=100 # nearest neightbours
+        )
     )
 
     # hack: add color infos in fpfh
@@ -122,7 +128,11 @@ def local_icp_algorithm(source_down, target_down, trans_init, threshold):
     reg_p2p = o3d.pipelines.registration.registration_icp(
         source_down, target_down, threshold, trans_init,
         estimation_method=o3d.pipelines.registration.TransformationEstimationPointToPlane(),
-        criteria=o3d.pipelines.registration.ICPConvergenceCriteria(max_iteration=50)
+        criteria=o3d.pipelines.registration.ICPConvergenceCriteria(
+            max_iteration=100,
+            # relative_fitness=0.0001,
+            # relative_rmse=0.0001
+        )
     )
     
     return reg_p2p
@@ -208,8 +218,7 @@ def cut_pcd_ceiling(pcd, height=0.8):
     return pcd.crop(new_bbox)
 
 def reconstruct(args):
-    voxel_size_thres = 0.15                 # for threshold and display
-    voxel_size = voxel_size_thres / 2
+    voxel_size = 0.10
     rgb_dir = os.path.join(args.data_root, "rgb")
     depth_dir = os.path.join(args.data_root, "depth")
 
@@ -306,7 +315,7 @@ def reconstruct(args):
             pcd, target_pcd, 
             # camera_poses[-1], 
             init_transformation,
-            threshold=voxel_size_thres
+            threshold=0.15 # at least (1+1+1)**0.5 / 2 * voxel_size
         )
         
         # 5. Update camera_poses
