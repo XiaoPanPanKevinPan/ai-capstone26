@@ -15,35 +15,65 @@ FOV = np.deg2rad(90.0)
 FX = (IMG_W / 2.0) / np.tan(FOV / 2.0)
 FY = (IMG_H / 2.0) / np.tan(FOV / 2.0)
 CX, CY = IMG_W / 2.0, IMG_H / 2.0
-DEPTH_SCALE = 1000.0 #
+DEPTH_SCALE = 1 / 10 * 255 # the same as load.py
 
-def depth_image_to_point_cloud(rgb_image, depth_image):
+# I think it should be renamed as RGBD_to_point_cloud, but I'll just keep it
+def depth_image_to_point_cloud(rgb_image: str, depth_image: str):
     """
     TASK 1: Geometric Unprojection [cite: 12, 25-27]
     Convert depth pixels (u, v, d) into 3D world points (x, y, z).
     """
-    # 1. Convert inputs to numpy arrays
+    # 1. Read & convert inputs to numpy arrays
+    rgb_image = np.array(o3d.io.read_image(rgb_image))
+    depth_image = np.array(o3d.io.read_image(depth_image))
+
     # 2. Convert depth to meters (Habitat depth is often scaled or normalized)
+    depth_image = depth_image / DEPTH_SCALE
+
     # 3. Create a coordinate grid for (u, v) pixels
+    u, v = np.meshgrid(np.arange(IMG_W), np.arange(IMG_H))
     
     # TODO: Implement unprojection logic here
-    # x = (u - CX) * z / FX
-    # y = (v - CY) * z / FY
-    # z = -depth (assuming camera looks towards -Z)
+    # 4. unprojection
+    x = (u - CX) * depth_image / FX
+    y = -(v - CY) * depth_image / FY # for v, up is [-]; for y, up is [+]
+    z = -depth_image # (assuming camera looks towards -Z)
 
+    # 5. before point cloud creation
+    valid_mask = depth_image.flatten() > 0
+    colors_norm = (rgb_image / 255.0).reshape(-1, 3)[valid_mask]
+    points_3d = np.stack([
+        x.flatten()[valid_mask], 
+        y.flatten()[valid_mask], 
+        z.flatten()[valid_mask]
+    ], axis=1)
+
+    # 6. create point cloud
     pcd = o3d.geometry.PointCloud()
-    # pcd.points = o3d.utility.Vector3dVector(points_3d)
-    # pcd.colors = o3d.utility.Vector3dVector(colors_norm)
+    pcd.points = o3d.utility.Vector3dVector(points_3d)
+    pcd.colors = o3d.utility.Vector3dVector(colors_norm)
     return pcd
 
 def preprocess_point_cloud(pcd, voxel_size):
     """
     Pre-processing: Voxelization and Normal Estimation [cite: 17, 29]
     """
+
+    # 1. Downsampling to
+    # - reduce computational cost
+    # - remove noise (especially for depth)
+    # - make the point cloud more uniform
     pcd_down = pcd.voxel_down_sample(voxel_size)
     
     # TODO: Estimate normals for pcd_down (required for Point-to-Plane ICP)
-    # pcd_down.estimate_normals(...)
+
+    # 2. Estimate normals
+    # - Note: Pt-to-Pl ICP is faster than Pt-to-Pt ICP
+    #    ref: https://learnopencv.com/iterative-closest-point-icp-explained/
+    radius_estNormal = voxel_size * 2.5
+    pcd_down.estimate_normals(
+        search_param=o3d.geometry.KDTreeSearchParamHybrid(radius=radius_estNormal, max_nn=30)
+    )
     
     # Compute FPFH features for Global Registration [cite: 30]
     radius_feature = voxel_size * 5.0
@@ -75,33 +105,96 @@ def local_icp_algorithm(source_down, target_down, trans_init, threshold):
     """
     # TODO: Use o3d.pipelines.registration.registration_icp
     # Estimation method should be TransformationEstimationPointToPlane()
-    return None
+
+    # trans_init is the initial guess preventing ICP from getting stuck in local minima
+    reg_p2p = o3d.pipelines.registration.registration_icp(
+        source_down, target_down, threshold, trans_init,
+        estimation_method=o3d.pipelines.registration.TransformationEstimationPointToPlane(),
+        criteria=o3d.pipelines.registration.ICPConvergenceCriteria(max_iteration=50)
+    )
+    
+    return reg_p2p
 
 def visualize_and_evaluate(reconstructed_pcd, predicted_cam_poses, gt_poses, args):
     """
     TASK 3: Evaluation & Visualization [cite: 19, 35-38]
     """
     # 1. Create LineSet for estimated trajectory (Red)
+    pred_lines = o3d.geometry.LineSet()
+
+    # Note: We'll use Vec3dVec (3 := the vec is (n, 3). d := the vec is float64)
+    #       and Vec2iVec (2 := (n, 2). i := int32) to wrap the data
+
+    # 1.1. Extract the points from predicted_cam_poses
+    pred_lines.points = o3d.utility.Vector3dVector(
+        predicted_cam_poses[:, 0:3, 3] 
+        # each in predicted_cam_poses is a 4x4 homogeneous transformation matrix
+        #   $^{world} T _{cam's local coord}$
+        # here, 
+        #   for each cam pose([:]), 
+        #   extract [x, y, z] axis' ([row=0:3])
+        #   translation part ([col=3])
+    ) 
+
+    # 1.2. Connect each pair of points with their indeces
+    pred_lines.lines = o3d.utility.Vector2iVector(np.array(
+        [ [i, i+1] for i in range(len(predicted_cam_poses)-1) ]
+    ))
+
+    # 1.3. Set the color of each line
+    pred_lines.colors = o3d.utility.Vector3dVector(
+        [ [1, 0, 0] for _ in range(len(predicted_cam_poses)-1) ]
+    )
+    
     # 2. Create LineSet for ground truth trajectory (Black)
+    gt_lines = o3d.geometry.LineSet()
+
+    # 2.1. Extract the points from gt_poses
+    gt_lines.points = o3d.utility.Vector3dVector(
+        gt_poses[:, 0:3, 3]
+    )
+
+    # 2.2. Connect each pair of points with their indeces
+    gt_lines.lines = o3d.utility.Vector2iVector(np.array(
+        [ [i, i+1] for i in range(len(gt_poses)-1) ]
+    ))
+
+    # 2.3. Set the color of each line
+    gt_lines.colors = o3d.utility.Vector3dVector(
+        [ [0, 0, 0] for _ in range(len(gt_poses)-1) ]
+    )
     
     # TODO: Calculate Mean L2 Distance between predicted_cam_poses and gt_poses [cite: 38]
     # L2 = sqrt(dx^2 + dy^2 + dz^2)
-    mean_l2_error = 0.0 
+    mean_l2_error = np.mean(
+        np.sqrt(
+            np.sum(
+                (predicted_cam_poses[:, 0:3, 3] - gt_poses[:, 0:3, 3]) ** 2, axis=1
+            )
+        )
+    )
     
     print(f"Mean L2 distance: {mean_l2_error:.6f} meters")
     
     # 3. Visualization
-    o3d.visualization.draw_geometries([reconstructed_pcd], 
+    o3d.visualization.draw_geometries([reconstructed_pcd, pred_lines, gt_lines], 
                                       window_name=f"Floor {args.floor} Reconstruction")
     return mean_l2_error
 
 def reconstruct(args):
-    voxel_size = 0.25 
+    voxel_size = 0.10
+    voxel_size_for_display = 0.02
     rgb_dir = os.path.join(args.data_root, "rgb")
     depth_dir = os.path.join(args.data_root, "depth")
 
-    rgb_files = sorted(glob.glob(os.path.join(rgb_dir, "*.png")))
-    depth_files = sorted(glob.glob(os.path.join(depth_dir, "*.png")))
+    rgb_files = sorted(
+        glob.glob(os.path.join(rgb_dir, "*.png")), 
+        key=lambda x: int(os.path.splitext(os.path.basename(x))[0])
+    )
+    depth_files = sorted(
+        glob.glob(os.path.join(depth_dir, "*.png")), 
+        key=lambda x: int(os.path.splitext(os.path.basename(x))[0])
+    )
     
     # Load Ground Truth Poses [cite: 24, 54]
     gt_pose_path = os.path.join(args.data_root, "GT_pose.npy")
@@ -119,17 +212,61 @@ def reconstruct(args):
     accumulated_pcd = o3d.geometry.PointCloud()
 
     # Reconstruction Loop [cite: 29-30]
+    prev_pcd = depth_image_to_point_cloud(rgb_files[0], depth_files[0])
+    prev_pcd_down, prev_pcd_fpfh = preprocess_point_cloud(prev_pcd, voxel_size)
+    accumulated_pcd += prev_pcd_down
+
     for i in range(1, len(rgb_files)):
         print(f"Processing Frame {i}...")
         # TODO: Implement the full pipeline:
         # 1. Convert RGB-D to PointCloud (Task 1)
+        pcd = depth_image_to_point_cloud(rgb_files[i], depth_files[i])
+
         # 2. Preprocess (Voxel/FPFH/Normals)
+        pcd_down, pcd_fpfh = preprocess_point_cloud(pcd, voxel_size)
+
         # 3. Execute Global Registration (RANSAC)
+        radius_ransac = voxel_size * 5.0
+        distance_ransac = voxel_size * 1.5 
+        ransac_result = o3d.pipelines.registration.registration_ransac_based_on_feature_matching(
+            source=pcd_down, target=prev_pcd_down, 
+            source_feature=pcd_fpfh, target_feature=prev_pcd_fpfh, 
+            mutual_filter=True,
+            max_correspondence_distance=distance_ransac,
+            # estimation_method=o3d.pipelines.registration.TransformationEstimationPointToPoint(False),
+            # ransac_n=3, 
+            checkers=[o3d.pipelines.registration.CorrespondenceCheckerBasedOnEdgeLength(0.9)],
+            # criteria=o3d.pipelines.registration.RANSACConvergenceCriteria(max_iteration=100000, confidence=0.999)
+        )
+
         # 4. Execute Local Registration (ICP - Task 2)
+        local_icp_result = local_icp_algorithm(pcd_down, prev_pcd_down, ransac_result.transformation, distance_ransac)
+        # local_icp_result = local_icp_algorithm(pcd_down, prev_pcd_down, np.eye(4), 0.15)
+        
         # 5. Update camera_poses and accumulate points
-        pass
+        camera_pose = camera_poses[-1] @ local_icp_result.transformation
+        camera_poses.append(camera_pose)
+
+        pcd_in_global = deepcopy(pcd)
+        pcd_in_global.transform(camera_pose)
+        accumulated_pcd += pcd_in_global
+
+        # Forcefully downsample to prevent OOM and infinite point cloud expansion
+        if i % 30 == 0 or i + 1 == len(rgb_files):
+            accumulated_pcd = accumulated_pcd.voxel_down_sample(voxel_size_for_display)
+
+        prev_pcd = pcd
+        prev_pcd_down, prev_pcd_fpfh = pcd_down, pcd_fpfh
+
+    camera_poses = np.stack(camera_poses)
 
     # TODO: Post-processing: remove the ceiling [cite: 37]
+    # remove the ceiling by cutting the y axis for y > 0.8
+    # bbox = accumulated_pcd.get_axis_aligned_bounding_box()
+    # max_bound = bbox.get_max_bound()
+    # max_bound[1] = 0.8  # Limit the maximum Y (height) to 0.8
+    # bbox.max_bound = max_bound
+    # accumulated_pcd = accumulated_pcd.crop(bbox)
     
     return accumulated_pcd, camera_poses, gt_poses
 
