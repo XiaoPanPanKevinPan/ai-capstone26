@@ -111,20 +111,109 @@ def preprocess_point_cloud(pcd, voxel_size):
 
     return pcd_down, enhanced_fpfh
 
-def my_local_icp_algorithm(source_pcd, target_pcd, initial_transform):
+def my_local_icp_algorithm(source_pcd, target_pcd, initial_transform, threshold):
     """
     TASK 2: Custom ICP Implementation (BONUS 20%) 
     Implement your own version of Point-to-Plane ICP.
     """
-    T_global = initial_transform.copy()
-    
+        
     # TODO: Implement the ICP loop:
-    # 1. Find nearest neighbors using target_tree.search_knn_vector_3d
-    # 2. Build the linear system (AtA)x = Atb
-    # 3. Solve for pose update and update T_global
     
+    T_global = initial_transform.copy()
+
+    moving_pcd = deepcopy(source_pcd)
+    moving_pcd.transform(T_global)
+    
+    # 0. Prepare: Create KD Tree
+    # - np.asarray is faster than .array, cuz it works w/o copy
+    target_tree = o3d.geometry.KDTreeFlann(target_pcd)
+    target_points = np.asarray(target_pcd.points)
+    target_normals = np.asarray(target_pcd.normals)
+    
+    # 1./2./3. ICP loop
+    max_iteration = 50 # same as in local_icp_algorithm()
+    for _ in range(max_iteration):
+        moving_points = np.asarray(moving_pcd.points)
+        
+        # 1. Find nearest neighbors using target_tree.search_knn_vector_3d
+        valid_points, valid_correspondances, valid_normals = [], [], []
+        
+        for point in moving_points:
+            # return: count, indeces[], squared_distances[]
+            cnt, idxs, dist_sqrs = target_tree.search_knn_vector_3d(point, 1)
+            if cnt == 1 and dist_sqrs[0] < threshold**2:
+                valid_points.append(point)
+                valid_correspondances.append(target_points[idxs[0]])
+                valid_normals.append(target_normals[idxs[0]])
+        
+        # translation [x, y, z] + rotation [roll, pitch, yaw]
+        # = 6 degrees of freedom
+        if len(valid_points) < 6:
+            break
+            
+        P = np.array(valid_points)
+        Q = np.array(valid_correspondances)
+        N = np.array(valid_normals)
+
+        # 2. Build the linear system **Ax = b**
+        # - Don't solve (A^T @ A) x = A^T b since 
+        #   computing A^T A will square the condition number, 
+        #   causing floating point precision loss.
+
+        # - Target: (T_global @ p - q) . n = 0 by optimizing T_global
+        #   - iteratively, it becomes IterTarget: (dT @ p - q) . n = 0
+        #     - dT := \Delta T_global
+        #       => update T_global = dT @ T_global
+        # - Theorem: dT @ p ~= p + \vec{\omega} × p + \vec{t}, as \vec{\omega} -> 0
+        #   - \vec{\omega} := a extremely small rotation [roll, pitch, yaw]
+        #   - \vec{t} := the translation [x_mov, y_mov, z_mov]
+        #   - so, dT can be split into \vec{\omega} and \vec{t}
+        #   => IterTarget: (p + \vec{\omega} × p + \vec{t} - q) . n = 0
+        #      - by triple product, \vec{\omega} × p . n = p × n . \vec{\omega}
+        #   => IterTarget: (p × n) . \vec{\omega} + n . \vec{t} = (q - p) . n
+        #   => IterTarget: [...(p × n), ...n] . [...\vec{\omega}, ...\vec{t}] = (q - p) . n
+        #      - Let A_i := [...(p × n), ...n], 
+        #      - Let   x := [...\vec{\omega}, ...\vec{t}]
+        #                 = [roll, pitch, yaw, x_mov, y_mov, z_mov]
+        #      - Let b_i := (q - p) . n
+        #   => IterTarget: A_i @ x = b_i  (for a single point i)
+        #
+        # - Since all N points share the exact same movement `x`, we stack all N equations:
+        #   - Let mat_b := N x 1 vector (stacking b_i for all points)
+        #   - Let mat_A := N x 6 matrix (stacking A_i for all points)
+        #   => IterTarget: mat_A @ x = mat_b
+        # 
+        # - This is an overdetermined system (N equations >> 6 variables), so we 
+        #   minimize the squared error: E(x) = ||mat_A @ x - mat_b||^2
+        # - In calculus, the "Jacobian" is the matrix of partial derivatives that points 
+        #   towards the steepest slope to minimize an error function. 
+        # - For our linear error function E(x) = mat_A @ x - mat_b, the derivative dE/dx 
+        #   happens to be exactly `mat_A` itself! So `mat_A` is also a Jacobian.
+
+        # - Create Jacobian matrix (mat_A) using vectorized cross product
+        A = np.hstack((np.cross(P, N), N))
+        b = np.sum((Q - P) * N, axis=1)
+        
+        # 3. Solve for pose update and update T_global
+        # - Use NumPy's least square method to solve for pose update
+        #   (alternative to (A^T @ A) x = A^T b)
+        x, _, _, _ = np.linalg.lstsq(A, b, rcond=None)
+        
+        # Convert x back to dT
+        dT = np.eye(4)
+        dT[:3, :3] = R.from_rotvec(x[:3]).as_matrix()
+        dT[:3, 3] = x[3:]
+        
+        # Accumulate and apply dT
+        T_global = dT @ T_global
+        moving_pcd.transform(dT)
+        
+        if np.linalg.norm(x) < 1e-3:
+            break
+            
     result = o3d.pipelines.registration.RegistrationResult()
     result.transformation = T_global
+    result.fitness = len(valid_points) / len(source_pcd.points) if len(source_pcd.points) > 0 else 0.0
     return result
 
 def local_icp_algorithm(source_down, target_down, trans_init, threshold):
@@ -239,17 +328,20 @@ def rotation_between_two_transformation_mat(mat1, mat2): # in rad
         )
     )
 
-def reconstruct__icp(pcd_down, target_pcd_down, init_transformation, camera_poses, voxel_size, failed_attempt_in_seq):
+def reconstruct__icp(pcd_down, target_pcd_down, init_transformation, camera_poses, voxel_size, failed_attempt_in_seq, args):
     icp_transformation = init_transformation
 
-    # start from at least (1+1+1)**0.5 / 2 * voxel_size \approx 0.9 voxelsize
-    # end at most 0.04 since 10m / 255 \approx 0.039
+    icp_algo = my_local_icp_algorithm if args.version == 'my_icp' \
+        else local_icp_algorithm
+
+    # start from at least (1+1+1)**0.5 / 2 * voxel_size ~= 0.9 voxelsize
+    # end at most 0.04 since 10m / 255 ~= 0.039
     for threshold in np.arange(
         max(0.9 * voxel_size, 0.15), 
         min(voxel_size, 0.08), 
         -0.01
     ):
-        icp_result = local_icp_algorithm(
+        icp_result = icp_algo(
             pcd_down, target_pcd_down, 
             icp_transformation,
             threshold=threshold 
@@ -317,7 +409,7 @@ def reconstruct__ransac(pcd_down, target_pcd_down, pcd_fpfh, target_fpfh, camera
         print("- RANSAC failed")
 
 def reconstruct(args):
-    voxel_size = 0.15
+    voxel_size = 0.25
     voxel_size_for_display = 0.02
     rgb_dir = os.path.join(args.data_root, "rgb")
     depth_dir = os.path.join(args.data_root, "depth")
@@ -375,13 +467,13 @@ def reconstruct(args):
             ransac_transformation = reconstruct__ransac(pcd_down, target_pcd_down, pcd_fpfh, target_fpfh, camera_poses, failed_attempt_in_seq)
             if ransac_transformation is None:
                 continue
-            final_transformation = reconstruct__icp(pcd_down, target_pcd_down, ransac_transformation, camera_poses, voxel_size, failed_attempt_in_seq)
+            final_transformation = reconstruct__icp(pcd_down, target_pcd_down, ransac_transformation, camera_poses, voxel_size, failed_attempt_in_seq, args)
 
         # 3. Execute Local Registration (ICP - Task 2)
         if final_transformation is None:
             print("- Too many ransac+icp failed, retrying with last pose as init for icp...")
             init_transformation = camera_poses[-1]
-            final_transformation = reconstruct__icp(pcd_down, target_pcd_down, init_transformation, camera_poses, voxel_size, failed_attempt_in_seq)
+            final_transformation = reconstruct__icp(pcd_down, target_pcd_down, init_transformation, camera_poses, voxel_size, failed_attempt_in_seq, args)
 
         # in case the retrying is failed
         if final_transformation is None:
@@ -436,6 +528,12 @@ if __name__ == '__main__':
     parser.add_argument('-f', '--floor', type=int, default=1)
     parser.add_argument('-v', '--version', type=str, default='open3d', help='open3d or my_icp')
     args = parser.parse_args()
+
+    # Argument checks
+    if args.version not in ['open3d', 'my_icp']:
+        raise ValueError("Invalid version. Use 'open3d' or 'my_icp'.")
+    if args.floor not in [1, 2]:
+        raise ValueError("Invalid floor. Use 1 or 2.")
 
     # Set data root based on floor
     args.data_root = f"data_collection/first_floor/" if args.floor == 1 else f"data_collection/second_floor/"
