@@ -134,28 +134,48 @@ def my_local_icp_algorithm(source_pcd, target_pcd, initial_transform, threshold)
     max_iteration = 50 # same as in local_icp_algorithm()
     for _ in range(max_iteration):
         moving_points = np.asarray(moving_pcd.points)
+        num_points = len(moving_points)
+        
+        # Pre-allocation
+        # valid_points, valid_correspondances, valid_normals = [], [], []
+        P_tmp = np.zeros((num_points, 3), dtype=np.float64)
+        Q_tmp = np.zeros((num_points, 3), dtype=np.float64)
+        N_tmp = np.zeros((num_points, 3), dtype=np.float64)
+        valid_count = 0
         
         # 1. Find nearest neighbors using target_tree.search_knn_vector_3d
-        valid_points, valid_correspondances, valid_normals = [], [], []
-        
         for point in moving_points:
             # return: count, indeces[], squared_distances[]
             cnt, idxs, dist_sqrs = target_tree.search_knn_vector_3d(point, 1)
             if cnt == 1 and dist_sqrs[0] < threshold**2:
-                valid_points.append(point)
-                valid_correspondances.append(target_points[idxs[0]])
-                valid_normals.append(target_normals[idxs[0]])
+
+                # valid_points.append(point)
+                # valid_correspondances.append(target_points[idxs[0]])
+                # valid_normals.append(target_normals[idxs[0]])
+
+                # fill np.ndarray directly
+                P_tmp[valid_count] = point
+                Q_tmp[valid_count] = target_points[idxs[0]]
+                N_tmp[valid_count] = target_normals[idxs[0]]
+                valid_count += 1
         
         # translation [x, y, z] + rotation [roll, pitch, yaw]
         # = 6 degrees of freedom
-        if len(valid_points) < 6:
+        if valid_count < 6:
             break
             
-        P = np.array(valid_points)
-        Q = np.array(valid_correspondances)
-        N = np.array(valid_normals)
+        # Finally, slice the array to get only valid data 
+        # - This is a pointer operation, not a copy and thus is quick
+        # P = np.array(valid_points)
+        # Q = np.array(valid_correspondances)
+        # N = np.array(valid_normals)
+        P = P_tmp[:valid_count]
+        Q = Q_tmp[:valid_count]
+        N = N_tmp[:valid_count]
 
         # 2. Build the linear system **Ax = b**
+
+        {
         # - Don't solve (A^T @ A) x = A^T b since 
         #   computing A^T A will square the condition number, 
         #   causing floating point precision loss.
@@ -189,6 +209,7 @@ def my_local_icp_algorithm(source_pcd, target_pcd, initial_transform, threshold)
         #   towards the steepest slope to minimize an error function. 
         # - For our linear error function E(x) = mat_A @ x - mat_b, the derivative dE/dx 
         #   happens to be exactly `mat_A` itself! So `mat_A` is also a Jacobian.
+        }
 
         # - Create Jacobian matrix (mat_A) using vectorized cross product
         A = np.hstack((np.cross(P, N), N))
@@ -213,7 +234,9 @@ def my_local_icp_algorithm(source_pcd, target_pcd, initial_transform, threshold)
             
     result = o3d.pipelines.registration.RegistrationResult()
     result.transformation = T_global
-    result.fitness = len(valid_points) / len(source_pcd.points) if len(source_pcd.points) > 0 else 0.0
+
+    # result.fitness = len(valid_points) / len(source_pcd.points) if len(source_pcd.points) > 0 else 0.0
+    result.fitness = valid_count / len(source_pcd.points) if len(source_pcd.points) > 0 else 0.0
     return result
 
 def local_icp_algorithm(source_down, target_down, trans_init, threshold):
@@ -409,7 +432,7 @@ def reconstruct__ransac(pcd_down, target_pcd_down, pcd_fpfh, target_fpfh, camera
         print("- RANSAC failed")
 
 def reconstruct(args):
-    voxel_size = 0.25
+    voxel_size = 0.15
     voxel_size_for_display = 0.02
     rgb_dir = os.path.join(args.data_root, "rgb")
     depth_dir = os.path.join(args.data_root, "depth")
@@ -458,7 +481,7 @@ def reconstruct(args):
         # 3/4. Registration
         final_transformation = None
 
-        # 4. Execute Global Registration (RANSAC)
+        # 3. Execute Global Registration (RANSAC)
         random.seed(666)
         attempt = 0
         while final_transformation is None and attempt < 50:
@@ -469,7 +492,7 @@ def reconstruct(args):
                 continue
             final_transformation = reconstruct__icp(pcd_down, target_pcd_down, ransac_transformation, camera_poses, voxel_size, failed_attempt_in_seq, args)
 
-        # 3. Execute Local Registration (ICP - Task 2)
+        # 4. Execute Local Registration (ICP - Task 2)
         if final_transformation is None:
             print("- Too many ransac+icp failed, retrying with last pose as init for icp...")
             init_transformation = camera_poses[-1]
@@ -479,7 +502,6 @@ def reconstruct(args):
         if final_transformation is None:
             failed_attempt_in_seq += 1
             print(f"=== There are {failed_attempt_in_seq} shots ignored in a row ===")
-
         else:
             failed_attempt_in_seq = 0
         
