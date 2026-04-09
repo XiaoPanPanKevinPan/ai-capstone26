@@ -1,0 +1,826 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ICP 核心概念視覺化：Point-to-Point vs Point-to-Plane</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap');
+
+        :root {
+            --bg-color: #0b0f19;
+            --panel-bg: rgba(255, 255, 255, 0.05);
+            --panel-border: rgba(255, 255, 255, 0.1);
+            --target-color: #00f0ff;
+            /* Neon cyan */
+            --source-color: #ff0055;
+            /* Neon pink/red */
+            --arrow-color: #ffaa00;
+            /* Neon orange */
+            --normal-color: rgba(0, 240, 255, 0.3);
+            --text-main: #f0f4f8;
+            --text-muted: #8b9bb4;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        #app-container {
+            display: flex;
+            width: 100%;
+            height: 100%;
+        }
+
+        /* Sidebar Panels */
+        #sidebar {
+            width: 360px;
+            background: var(--panel-bg);
+            backdrop-filter: blur(10px);
+            border-right: 1px solid var(--panel-border);
+            display: flex;
+            flex-direction: column;
+            padding: 24px;
+            box-sizing: border-box;
+            z-index: 10;
+            overflow-y: auto;
+        }
+
+        h1 {
+            font-size: 20px;
+            font-weight: 800;
+            margin-top: 0;
+            margin-bottom: 8px;
+            background: -webkit-linear-gradient(45deg, var(--target-color), var(--source-color));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        p.subtitle {
+            font-size: 13px;
+            color: var(--text-muted);
+            margin-bottom: 30px;
+            line-height: 1.5;
+        }
+
+        .control-group {
+            margin-bottom: 24px;
+        }
+
+        .control-group h3 {
+            font-size: 14px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--text-muted);
+            margin-bottom: 12px;
+            border-bottom: 1px solid var(--panel-border);
+            padding-bottom: 6px;
+        }
+
+        label {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 13px;
+            margin-bottom: 8px;
+        }
+
+        input[type=range] {
+            width: 100%;
+            margin-bottom: 12px;
+            accent-color: var(--target-color);
+        }
+
+        .slider-row {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .btn {
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: white;
+            padding: 10px 16px;
+            border-radius: 6px;
+            font-family: inherit;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.2s;
+            text-align: center;
+            width: 100%;
+            margin-bottom: 8px;
+            font-weight: 600;
+        }
+
+        .btn:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        .btn.primary {
+            background: var(--target-color);
+            color: #000;
+            border-color: var(--target-color);
+        }
+
+        .btn.primary:hover {
+            background: #00c0cc;
+        }
+
+        .alg-selector {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 16px;
+        }
+
+        .alg-btn {
+            flex: 1;
+            padding: 8px;
+            background: transparent;
+            border: 1px solid var(--panel-border);
+            color: var(--text-muted);
+            border-radius: 4px;
+            cursor: pointer;
+            transition: 0.2s;
+            font-size: 12px;
+        }
+
+        .alg-btn.active {
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
+            border-color: var(--text-main);
+        }
+
+        .checkbox-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 13px;
+            margin-bottom: 8px;
+            cursor: pointer;
+        }
+
+        /* Canvas Area */
+        #canvas-container {
+            flex: 1;
+            position: relative;
+            background: radial-gradient(circle at center, #111a2e 0%, #080b12 100%);
+        }
+
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        .instruction-overlay {
+            position: absolute;
+            bottom: 24px;
+            left: 24px;
+            padding: 16px;
+            background: var(--panel-bg);
+            backdrop-filter: blur(5px);
+            border: 1px solid var(--panel-border);
+            border-radius: 8px;
+            pointer-events: none;
+            font-size: 13px;
+            line-height: 1.6;
+            color: var(--text-muted);
+        }
+
+        .instruction-overlay strong {
+            color: var(--target-color);
+        }
+
+        .instruction-overlay span.src {
+            color: var(--source-color);
+            font-weight: bold;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div id="app-container">
+        <div id="sidebar">
+            <h1>ICP 視覺化比較</h1>
+            <p class="subtitle">拉拽控制點改變 L 型牆角。調整 Source 初始姿態。比較兩種 ICP 演算法如何滑動收斂。</p>
+
+            <div class="control-group">
+                <h3>目標曲線 (Target Curve)</h3>
+                <button class="btn" onclick="addSplineSegment()">新增連續曲線段 (Add Spline)</button>
+            </div>
+
+            <div class="control-group">
+                <h3>演算法模式 (Algorithm)</h3>
+                <div class="alg-selector">
+                    <button class="alg-btn active" id="btn-pt2pt"
+                        onclick="setAlgorithm('pt2pt')">Point-to-Point</button>
+                    <button class="alg-btn" id="btn-pt2pl" onclick="setAlgorithm('pt2pl')">Point-to-Plane</button>
+                </div>
+                <div class="checkbox-row">
+                    <input type="checkbox" id="show-normals" checked>
+                    <label for="show-normals" style="margin:0;">顯示 Target 法向量</label>
+                </div>
+                <div class="checkbox-row">
+                    <input type="checkbox" id="show-corresp" checked>
+                    <label for="show-corresp" style="margin:0;">顯示誤差箭頭 (Correspondences)</label>
+                </div>
+            </div>
+
+            <div class="control-group">
+                <h3>Source 初始姿態設定</h3>
+                <div class="slider-row">
+                    <label>X 偏移 (X Offset) <span id="val-x">0</span></label>
+                    <input type="range" id="slider-x" min="-200" max="200" value="0">
+
+                    <label>Y 偏移 (Y Offset) <span id="val-y">50</span></label>
+                    <input type="range" id="slider-y" min="-200" max="200" value="50">
+
+                    <label>旋轉角度 (Rotation) <span id="val-theta">15°</span></label>
+                    <input type="range" id="slider-theta" min="-180" max="180" value="15">
+                </div>
+                <button class="btn" onclick="resetSourcePose()">套用初始姿態</button>
+            </div>
+
+            <div class="control-group">
+                <h3>操作 (Actions)</h3>
+                <button class="btn primary" onclick="stepICP()">單步迭代 (Step ICP)</button>
+                <div class="checkbox-row" style="margin-top: 12px;">
+                    <input type="checkbox" id="auto-play">
+                    <label for="auto-play" style="margin:0;">自動播放 (Auto run)</label>
+                </div>
+            </div>
+
+            <div class="control-group" style="margin-top:auto; font-size:12px; color:#556;">
+                <strong>提示：</strong>在畫布上拖曳亮藍色的圓點，可以動態調整目標「L型牆角」的貝茲曲線形狀。
+            </div>
+        </div>
+
+        <div id="canvas-container">
+            <canvas id="view"></canvas>
+            <div class="instruction-overlay">
+                Target: <strong>[青色]</strong> 堅固的牆面 / 曲線<br>
+                Source: <span class="src">[洋紅色]</span> 試圖對齊的掃描點雲<br>
+                <div style="margin-top:8px;"><strong>Point-to-Point:</strong> <span style="color:#00aaff;">➔ 藍箭頭</span> (向最近點的拉力)</div>
+                <div style="margin-top:4px;"><strong>Point-to-Plane:</strong></div>
+                <div style="padding-left:14px; font-size:12px;">
+                    <span style="color:rgba(255,255,255,0.7);">― 白細線</span> (找尋最近對應點)<br>
+                    <span style="color:#ffee00;">➔ 黃箭頭</span> (對應點之表面法向量)<br>
+                    <span style="color:#00ff44;">➔ 綠箭頭</span> (投影在法向量上的「有效拉力」)
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('view');
+        const ctx = canvas.getContext('2d');
+        let width, height;
+
+        // State Variables
+        let algorithm = 'pt2pt'; // 'pt2pt' or 'pt2pl'
+        let isAutoPlaying = false;
+
+        // Target Curve Control Points (Piecewise Cubic Bezier)
+        // Coords relative to center (0,0)
+        let cp = [
+            // Segment 1 (Vertical)
+            { x: -150, y: 150 },
+            { x: -150, y: 50 },
+            { x: -150, y: -50 },
+            { x: -150, y: -150 }, // Joint (Corner)
+            // Segment 2 (Horizontal)
+            { x: -50, y: -150 },
+            { x: 50, y: -150 },
+            { x: 150, y: -150 }
+        ];
+
+        let targetPoints = [];
+        let targetNormals = [];
+
+        // Source Point Cloud State
+        let sourceBasePoints = []; // The original un-transformed points sampled from the same curve
+        let sourceCurrentPoints = []; // The currently transformed points
+
+        // Transform variables
+        let currentTx = 0;
+        let currentTy = 50;
+        let currentTheta = 15 * (Math.PI / 180);
+
+        // Interaction flags
+        let draggedCP = null;
+
+        function resize() {
+            width = canvas.parentElement.clientWidth;
+            height = canvas.parentElement.clientHeight;
+            canvas.width = width;
+            canvas.height = height;
+            draw();
+        }
+        window.addEventListener('resize', resize);
+
+        // --- Math & Geometry Helpers ---
+        function cubicBezier(t, p0, p1, p2, p3) {
+            const u = 1 - t;
+            const tt = t * t;
+            const uu = u * u;
+            const uuu = uu * u;
+            const ttt = tt * t;
+
+            let p = {
+                x: uuu * p0.x + 3 * uu * t * p1.x + 3 * u * tt * p2.x + ttt * p3.x,
+                y: uuu * p0.y + 3 * uu * t * p1.y + 3 * u * tt * p2.y + ttt * p3.y
+            };
+            return p;
+        }
+
+        function cubicBezierTangent(t, p0, p1, p2, p3) {
+            const u = 1 - t;
+            const dx = 3 * u * u * (p1.x - p0.x) + 6 * u * t * (p2.x - p1.x) + 3 * t * t * (p3.x - p2.x);
+            const dy = 3 * u * u * (p1.y - p0.y) + 6 * u * t * (p2.y - p1.y) + 3 * t * t * (p3.y - p2.y);
+            const len = Math.sqrt(dx * dx + dy * dy);
+            if (len === 0) return { x: 1, y: 0 };
+            return { x: dx / len, y: dy / len };
+        }
+
+        function computeCurvePointsAndNormals() {
+            targetPoints = [];
+            targetNormals = [];
+            const numSegments = (cp.length - 1) / 3;
+            const numSamplesPerSeg = 40;
+
+            for (let s = 0; s < numSegments; s++) {
+                const idx = s * 3;
+                const p0 = cp[idx];
+                const p1 = cp[idx + 1];
+                const p2 = cp[idx + 2];
+                const p3 = cp[idx + 3];
+
+                for (let i = 0; i <= numSamplesPerSeg; i++) {
+                    if (s > 0 && i === 0) continue; // avoid dup point at joints
+
+                    const t = i / numSamplesPerSeg;
+                    const pt = cubicBezier(t, p0, p1, p2, p3);
+                    const tan = cubicBezierTangent(t, p0, p1, p2, p3);
+                    const normal = { x: tan.y, y: -tan.x };
+
+                    targetPoints.push(pt);
+                    targetNormals.push(normal);
+                }
+            }
+
+            // Sample source points directly from targetPoints mapping to ensure subset
+            sourceBasePoints = [];
+            const numSourceSamples = 30;
+            const tLen = targetPoints.length;
+            const startIdx = Math.floor(tLen * 0.2);
+            const endIdx = Math.floor(tLen * 0.8);
+            for (let i = 0; i < numSourceSamples; i++) {
+                const idx = startIdx + Math.floor((endIdx - startIdx) * (i / (numSourceSamples - 1)));
+                sourceBasePoints.push({ x: targetPoints[idx].x, y: targetPoints[idx].y });
+            }
+            applySourcePose();
+        }
+
+        window.addSplineSegment = function () {
+            const lastIdx = cp.length - 1;
+            const p3 = cp[lastIdx];
+            const p2 = cp[lastIdx - 1];
+
+            // Mirror p2 across p3 to get C1 continuity for the new handle p4
+            const p4x = p3.x + (p3.x - p2.x);
+            const p4y = p3.y + (p3.y - p2.y);
+
+            // Add a slight extension for p5 and p6
+            const p5x = p4x + 50;
+            const p5y = p4y + 50;
+            const p6x = p5x + 50; // New endpoint
+            const p6y = p5y;
+
+            cp.push({ x: p4x, y: p4y });
+            cp.push({ x: p5x, y: p5y });
+            cp.push({ x: p6x, y: p6y });
+            computeCurvePointsAndNormals();
+            draw();
+        };
+
+        // --- GUI Actions ---
+        window.setAlgorithm = function (alg) {
+            algorithm = alg;
+            document.getElementById('btn-pt2pt').className = alg === 'pt2pt' ? 'alg-btn active' : 'alg-btn';
+            document.getElementById('btn-pt2pl').className = alg === 'pt2pl' ? 'alg-btn active' : 'alg-btn';
+            draw();
+        };
+
+        window.resetSourcePose = function () {
+            currentTx = parseFloat(document.getElementById('slider-x').value);
+            currentTy = -parseFloat(document.getElementById('slider-y').value); // flip Y so up is positive structurally
+            currentTheta = parseFloat(document.getElementById('slider-theta').value) * Math.PI / 180;
+            applySourcePose();
+        };
+
+        function applySourcePose() {
+            const cosT = Math.cos(currentTheta);
+            const sinT = Math.sin(currentTheta);
+            sourceCurrentPoints = sourceBasePoints.map(p => ({
+                x: currentTx + (p.x * cosT - p.y * sinT),
+                y: currentTy + (p.x * sinT + p.y * cosT)
+            }));
+            draw();
+        }
+
+        // --- ICP Logic ---
+        function findNearestTarget(pt) {
+            let minDist = Infinity;
+            let nearestIdx = 0;
+            for (let i = 0; i < targetPoints.length; i++) {
+                const tp = targetPoints[i];
+                const dsq = (pt.x - tp.x) ** 2 + (pt.y - tp.y) ** 2;
+                if (dsq < minDist) {
+                    minDist = dsq;
+                    nearestIdx = i;
+                }
+            }
+            return {
+                targetPt: targetPoints[nearestIdx],
+                normal: targetNormals[nearestIdx]
+            };
+        }
+
+        // Solves 3x3 linear system Ax = b using Cramer's rule
+        function solve3x3(A, B) {
+            const det = (m) =>
+                m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1]) -
+                m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0]) +
+                m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0]);
+
+            const D = det(A);
+            if (Math.abs(D) < 1e-8) return [0, 0, 0];
+
+            const replaceCol = (m, colIdx, vec) => {
+                let res = m.map(row => [...row]);
+                for (let i = 0; i < 3; i++) res[i][colIdx] = vec[i];
+                return res;
+            };
+
+            const Dx = det(replaceCol(A, 0, B));
+            const Dy = det(replaceCol(A, 1, B));
+            const Dz = det(replaceCol(A, 2, B));
+
+            return [Dx / D, Dy / D, Dz / D];
+        }
+
+        window.stepICP = function () {
+            if (sourceCurrentPoints.length === 0) return;
+
+            // 1. Find Correspondences
+            let corrs = [];
+            for (let sp of sourceCurrentPoints) {
+                corrs.push({ src: sp, tgt: findNearestTarget(sp) });
+            }
+
+            if (algorithm === 'pt2pt') {
+                // Closed-form exact 2D Point-to-Point ICP
+                // Means
+                let srcX = 0, srcY = 0, tgtX = 0, tgtY = 0;
+                const N = corrs.length;
+                for (let c of corrs) {
+                    srcX += c.src.x; srcY += c.src.y;
+                    tgtX += c.tgt.targetPt.x; tgtY += c.tgt.targetPt.y;
+                }
+                srcX /= N; srcY /= N; tgtX /= N; tgtY /= N;
+
+                // Cross-covariance
+                let s_xy_minus_yx = 0;
+                let s_xx_plus_yy = 0;
+                for (let c of corrs) {
+                    const sx = c.src.x - srcX;
+                    const sy = c.src.y - srcY;
+                    const dx = c.tgt.targetPt.x - tgtX;
+                    const dy = c.tgt.targetPt.y - tgtY;
+                    s_xy_minus_yx += (sx * dy - sy * dx);
+                    s_xx_plus_yy += (sx * dx + sy * dy);
+                }
+
+                const dTheta = Math.atan2(s_xy_minus_yx, s_xx_plus_yy);
+                const cosT = Math.cos(dTheta);
+                const sinT = Math.sin(dTheta);
+
+                const dx = tgtX - (srcX * cosT - srcY * sinT);
+                const dy = tgtY - (srcX * sinT + srcY * cosT);
+
+                // Accumulate pose
+                currentTx = currentTx + dx * Math.cos(currentTheta) - dy * Math.sin(currentTheta);
+                currentTy = currentTy + dx * Math.sin(currentTheta) + dy * Math.cos(currentTheta);
+                // Actually it's easier to just apply to the base points directly by updating the global transform.
+                // But composing the local transform backwards is slightly tricky.
+                // Let's just solve for the incremental update directly on the moving points,
+                // and update the cumulative pose by transforming the old origin (0,0, currentTheta)
+
+                let newTx = dx + currentTx * cosT - currentTy * sinT;
+                let newTy = dy + currentTx * sinT + currentTy * cosT;
+                currentTx = newTx;
+                currentTy = newTy;
+                currentTheta = currentTheta + dTheta;
+
+            } else {
+                // Linearized Least Squares for 2D Point-to-Plane ICP
+                // We want to minimize sum( ((R(dT) * s + dt - d) . n)^2 )
+                // R(dT)*s ~ s + dT * [-sy; sx]
+                // Let X = [dt_x, dt_y, dT]^T
+                // A_i = [nx, ny, sx*ny - sy*nx]
+                // B_i = (d - s) . n
+
+                let ATA = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
+                let ATB = [0, 0, 0];
+
+                for (let c of corrs) {
+                    const s = c.src;
+                    const d = c.tgt.targetPt;
+                    const n = c.tgt.normal;
+
+                    const cross = s.x * n.y - s.y * n.x;
+                    const dist = (d.x - s.x) * n.x + (d.y - s.y) * n.y;
+
+                    const A_row = [n.x, n.y, cross];
+
+                    for (let i = 0; i < 3; i++) {
+                        ATB[i] += A_row[i] * dist;
+                        for (let j = 0; j < 3; j++) {
+                            ATA[i][j] += A_row[i] * A_row[j];
+                        }
+                    }
+                }
+
+                const [dx, dy, dTheta] = solve3x3(ATA, ATB);
+
+                // Sometimes the matrix might be rank deficient or close to it, dampen slightly
+                const cosT = Math.cos(dTheta);
+                const sinT = Math.sin(dTheta);
+                let newTx = dx + currentTx * cosT - currentTy * sinT;
+                let newTy = dy + currentTx * sinT + currentTy * cosT;
+                currentTx = newTx;
+                currentTy = newTy;
+                currentTheta = currentTheta + dTheta;
+            }
+
+            applySourcePose();
+        };
+
+
+        // --- Rendering ---
+        function toScreen(p) {
+            return {
+                x: width / 2 + p.x,
+                y: height / 2 + p.y
+            };
+        }
+
+        function fromScreen(sx, sy) {
+            return {
+                x: sx - width / 2,
+                y: sy - height / 2
+            };
+        }
+
+        function drawArrow(ctx, fromX, fromY, toX, toY, color) {
+            const headlen = 8; // length of head in pixels
+            const angle = Math.atan2(toY - fromY, toX - fromX);
+            ctx.beginPath();
+            ctx.moveTo(fromX, fromY);
+            ctx.lineTo(toX, toY);
+            ctx.lineTo(toX - headlen * Math.cos(angle - Math.PI / 6), toY - headlen * Math.sin(angle - Math.PI / 6));
+            ctx.moveTo(toX, toY);
+            ctx.lineTo(toX - headlen * Math.cos(angle + Math.PI / 6), toY - headlen * Math.sin(angle + Math.PI / 6));
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, width, height);
+
+            // Grid background
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            for (let x = (width / 2) % 50; x < width; x += 50) { ctx.moveTo(x, 0); ctx.lineTo(x, height); }
+            for (let y = (height / 2) % 50; y < height; y += 50) { ctx.moveTo(0, y); ctx.lineTo(width, y); }
+            ctx.stroke();
+
+            // 1. Draw Target Curve & Points
+            ctx.beginPath();
+            for (let i = 0; i < targetPoints.length; i++) {
+                const sp = toScreen(targetPoints[i]);
+                if (i === 0) ctx.moveTo(sp.x, sp.y);
+                else ctx.lineTo(sp.x, sp.y);
+            }
+            ctx.strokeStyle = 'var(--target-color)';
+            ctx.lineWidth = 3;
+            ctx.stroke();
+
+            // Target normals
+            if (document.getElementById('show-normals').checked) {
+                ctx.beginPath();
+                ctx.strokeStyle = 'var(--normal-color)';
+                ctx.lineWidth = 1.5;
+                for (let i = 0; i < targetPoints.length; i += 2) { // draw every 2nd
+                    const sp = toScreen(targetPoints[i]);
+                    const n = targetNormals[i];
+                    ctx.moveTo(sp.x, sp.y);
+                    ctx.lineTo(sp.x + n.x * 20, sp.y + n.y * 20);
+                }
+                ctx.stroke();
+            }
+
+            // Draw Handles
+            for (let s = 0; s < (cp.length - 1) / 3; s++) {
+                const idx = s * 3;
+                const sp0 = toScreen(cp[idx]);
+                const sp1 = toScreen(cp[idx + 1]);
+                const sp2 = toScreen(cp[idx + 2]);
+                const sp3 = toScreen(cp[idx + 3]);
+                ctx.beginPath();
+                ctx.moveTo(sp0.x, sp0.y);
+                ctx.lineTo(sp1.x, sp1.y);
+                ctx.moveTo(sp3.x, sp3.y);
+                ctx.lineTo(sp2.x, sp2.y);
+                ctx.strokeStyle = 'rgba(0, 240, 255, 0.3)';
+                ctx.lineWidth = 1;
+                ctx.setLineDash([4, 4]);
+                ctx.stroke();
+                ctx.setLineDash([]);
+            }
+
+            // Draw Target Control Points (Knots and handles distinctly)
+            for (let i = 0; i < cp.length; i++) {
+                const sp = toScreen(cp[i]);
+                ctx.beginPath();
+                if (i % 3 === 0) {
+                    // Knots
+                    ctx.arc(sp.x, sp.y, 6, 0, Math.PI * 2);
+                    ctx.fillStyle = (draggedCP === i) ? '#ffffff' : 'var(--target-color)';
+                } else {
+                    // Handles
+                    ctx.arc(sp.x, sp.y, 4, 0, Math.PI * 2);
+                    ctx.fillStyle = (draggedCP === i) ? '#ffffff' : '#00aaee';
+                }
+                ctx.fill();
+            }
+
+            // 2. Draw Source Points
+            ctx.beginPath();
+            if (sourceCurrentPoints.length > 0) {
+                const first = toScreen(sourceCurrentPoints[0]);
+                ctx.moveTo(first.x, first.y);
+                for (let i = 1; i < sourceCurrentPoints.length; i++) {
+                    const sp = toScreen(sourceCurrentPoints[i]);
+                    ctx.lineTo(sp.x, sp.y);
+                }
+            }
+            ctx.strokeStyle = 'var(--source-color)';
+            ctx.lineWidth = 4;
+            ctx.lineJoin = 'round';
+            ctx.stroke();
+
+            for (let p of sourceCurrentPoints) {
+                const sp = toScreen(p);
+                ctx.beginPath();
+                ctx.arc(sp.x, sp.y, 4, 0, Math.PI * 2);
+                ctx.fillStyle = 'white';
+                ctx.fill();
+            }
+
+            // 3. Draw Correspondences / Error Vectors
+            if (document.getElementById('show-corresp').checked && sourceCurrentPoints.length > 0) {
+                for (let sp of sourceCurrentPoints) {
+                    const nearest = findNearestTarget(sp);
+                    const screenS = toScreen(sp);
+                    const screenT = toScreen(nearest.targetPt);
+
+                    if (algorithm === 'pt2pt') {
+                        // Pull directly to point
+                        drawArrow(ctx, screenS.x, screenS.y, screenT.x, screenT.y, '#00aaff');
+                    } else {
+                        // Project onto normal plane of the target point
+                        // distance to plane = (target - source) . n
+                        const distToPlane = (nearest.targetPt.x - sp.x) * nearest.normal.x + (nearest.targetPt.y - sp.y) * nearest.normal.y;
+
+                        const projPt = {
+                            x: sp.x + nearest.normal.x * distToPlane,
+                            y: sp.y + nearest.normal.y * distToPlane
+                        };
+                        const screenProj = toScreen(projPt);
+
+                        // 1. Line from Sp to Tp (Nearest connection)
+                        ctx.beginPath();
+                        ctx.moveTo(screenS.x, screenS.y);
+                        ctx.lineTo(screenT.x, screenT.y);
+                        ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+                        ctx.lineWidth = 1;
+                        ctx.stroke();
+
+                        // 2. Normal vector arrow from Tp
+                        const normalTip = {
+                            x: nearest.targetPt.x + nearest.normal.x * 20,
+                            y: nearest.targetPt.y + nearest.normal.y * 20
+                        };
+                        const screenNormalTip = toScreen(normalTip);
+                        drawArrow(ctx, screenT.x, screenT.y, screenNormalTip.x, screenNormalTip.y, '#ffee00');
+
+                        // 3. The "Pull" vector (Effective error projected on normal)
+                        drawArrow(ctx, screenS.x, screenS.y, screenProj.x, screenProj.y, '#00ff44');
+
+                        // 4. Draw a faint tangent line at target to show "the plane"
+                        const tanLineLen = 30;
+                        ctx.beginPath();
+                        ctx.moveTo(screenT.x - nearest.normal.y * tanLineLen, screenT.y + nearest.normal.x * tanLineLen);
+                        ctx.lineTo(screenT.x + nearest.normal.y * tanLineLen, screenT.y - nearest.normal.x * tanLineLen);
+                        ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+                        ctx.setLineDash([4, 4]);
+                        ctx.lineWidth = 1;
+                        ctx.stroke();
+                        ctx.setLineDash([]);
+                    }
+                }
+            }
+        }
+
+        // --- Inputs & Listeners ---
+        ['slider-x', 'slider-y', 'slider-theta'].forEach(id => {
+            const el = document.getElementById(id);
+            el.addEventListener('input', (e) => {
+                document.getElementById(id.replace('slider', 'val')).innerText =
+                    (id.includes('theta') ? e.target.value + '°' : e.target.value);
+                resetSourcePose();
+            });
+        });
+
+        ['show-normals', 'show-corresp'].forEach(id => {
+            document.getElementById(id).addEventListener('change', draw);
+        });
+
+        document.getElementById('auto-play').addEventListener('change', (e) => {
+            isAutoPlaying = e.target.checked;
+        });
+
+        // Auto play loop
+        setInterval(() => {
+            if (isAutoPlaying) {
+                stepICP();
+            }
+        }, 100);
+
+        // Mouse Interaction for Control Points
+        canvas.addEventListener('mousedown', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const mx = e.clientX - rect.left;
+            const my = e.clientY - rect.top;
+            const mp = fromScreen(mx, my);
+
+            for (let i = 0; i < cp.length; i++) {
+                const dx = cp[i].x - mp.x;
+                const dy = cp[i].y - mp.y;
+                if (dx * dx + dy * dy < 100) { // 10px radius hit
+                    draggedCP = i;
+                    return;
+                }
+            }
+        });
+
+        canvas.addEventListener('mousemove', (e) => {
+            if (draggedCP !== null) {
+                const rect = canvas.getBoundingClientRect();
+                const mx = e.clientX - rect.left;
+                const my = e.clientY - rect.top;
+                cp[draggedCP] = fromScreen(mx, my);
+                computeCurvePointsAndNormals();
+            }
+        });
+
+        canvas.addEventListener('mouseup', () => {
+            draggedCP = null;
+            draw();
+        });
+        canvas.addEventListener('mouseleave', () => {
+            draggedCP = null;
+            draw();
+        });
+
+        // INIT
+        resize();
+        computeCurvePointsAndNormals();
+        resetSourcePose();
+
+    </script>
+</body>
+
+</html>
