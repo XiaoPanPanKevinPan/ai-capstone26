@@ -112,9 +112,9 @@ def run_in_sim(start_world: Tuple[float, float], world_path: List[Tuple[float, f
 #       We should stop once the surrounding meets goal_prompt
 def plan_path(start, goal_prompt, goal, occupancy_map, map_img):
     MAX_ITER = 50000
-    STEP_SIZE = 0.20 * MAP_RESOLUTION   # 20cm per step
+    STEP_SIZE = 1.0 * MAP_RESOLUTION    # 1m per step
     GOAL_BIAS = 0.50                    # 50% chance to directly explore towards the goal
-    GOAL_DIST = 0.50 * MAP_RESOLUTION   # 50cm radius to accept the goal
+    GOAL_DIST = 1.00 * MAP_RESOLUTION   # 1m radius to accept the goal
     
     height, width = occupancy_map.shape
     goal_color = np.array(SEMANTIC_DICTS["colors"][goal_prompt][0]) / 255.0
@@ -196,12 +196,9 @@ def plan_path(start, goal_prompt, goal, occupancy_map, map_img):
             continue
 
         # 6.3. select the goal color in local map as the new goal
-        # np.where 對二維影像回傳的會是 (row_indices, col_indices) 也就是 (v, u)
-        # 必須注意 [1] 才是 u, [0] 才是 v，否則會發生 x, y 對調的 Bug!
         goal_pixels = np.where(mask_goal)
         new_goal = (goal_pixels[1][0] + u_min, goal_pixels[0][0] + v_min)
         
-    
         # 7. once found, stop and form the reverted path
         path = []
         curr = new_idx
@@ -211,7 +208,7 @@ def plan_path(start, goal_prompt, goal, occupancy_map, map_img):
         path.reverse()
 
         # 7.1. append the new_goal in the end of the path 
-        #      (will be stripped before sending to simulator)
+        #      (the simulator will try to get the closest no matter reachable or not)
         path.append(new_goal) 
         
         print(f"RRT Success! Found a path with {len(path)} steps.")
@@ -250,14 +247,14 @@ def main():
     vis_map = (np.copy(map_img_for_display) * 255).astype(np.uint8)
     vis_map = np.ascontiguousarray(vis_map) # prevent cv2 complaining
         
-    # draw the RRT tree (light blue)
+    # draw the RRT tree (light blue) and nodes (cyan)
     for idx in range(1, len(tree)):
         parent_idx = parents[idx]
         if parent_idx is not None:
             pt_end = (int(tree[idx][0]), int(tree[idx][1]))
             pt_start = (int(tree[parent_idx][0]), int(tree[parent_idx][1]))
             cv2.line(vis_map, pt_start, pt_end, (255, 200, 150), 1)
-            cv2.circle(vis_map, pt_end, 1, (200, 200, 200), -1)
+            cv2.circle(vis_map, pt_end, 1, (0, 255, 255), -1)
 
     # draw the final path (red line) and nodes (green)
     for i in range(len(path) - 1):
