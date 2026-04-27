@@ -31,15 +31,19 @@ def load_and_filter_map(point_path: str, color_path: str):
     #   is 1.5m from the floor, so we assume the robot has a physical height
     #   of 1.5 + 0
     # - so, cut floor < 1.3m and ceiling > 0.0m
-    ceiling_threshold = 0.0
+    ceiling_threshold = 0.3
     floor_threshold = -1.3
 
     mask_ceiling = coords[:, 1] > ceiling_threshold
     mask_floor = coords[:, 1] < floor_threshold
     mask_remove = mask_ceiling | mask_floor
     
+    # 1.1. cut and sort
     coords_cut = coords[~mask_remove]
     colors_cut = colors[~mask_remove]
+    sort_idx = np.lexsort((1-coords_cut[:, 1],)) # sort by y
+    coords_cut = coords_cut[sort_idx]
+    colors_cut = colors_cut[sort_idx]
     
     # 2. project to 2D
     # - map (x, z) to (u, v)
@@ -81,14 +85,14 @@ def load_and_filter_map(point_path: str, color_path: str):
     
     clean_mask = np.zeros_like(occupancy_mask)
     for i in range(1, num_labels): # start from 1, skip 0 (background)
-        if stats[i, cv2.CC_STAT_AREA] >= 7: # remove area < 7
+        if stats[i, cv2.CC_STAT_AREA] >= 20: # remove area < 20
             clean_mask[labels == i] = 1
 
     # make the background + removed noises white
     map_img[clean_mask == 0] = 1.0
 
     # 5. add patches
-    patches = [(159, 87, 160, 100), (91, 36, 93, 47)]
+    patches = [(159, 87, 160, 100), (91, 36, 93, 47), (137, 40, 153, 38)]
     for u1, v1, u2, v2 in patches:
         # draw lines
         cv2.line(map_img, (u1, v1), (u2, v2), (0, 0, 0), 1)
