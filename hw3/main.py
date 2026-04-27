@@ -133,9 +133,9 @@ def is_collision_free(p1, p2, occupancy_map):
 #       We should stop once the surrounding meets goal_prompt
 def plan_path(start, goal_prompt, goal, occupancy_map, map_img):
     MAX_ITER = 50000
-    STEP_SIZE = 0.10 * MAP_RESOLUTION   # 1m per step
+    STEP_SIZE = 0.10 * MAP_RESOLUTION   # 10cm per step
     GOAL_BIAS = 0.50                    # 50% chance to directly explore towards the goal
-    GOAL_DIST = 0.40 * MAP_RESOLUTION   # 1m radius to accept the goal
+    GOAL_DIST = 0.40 * MAP_RESOLUTION   # 40cm radius to accept the goal
     
     height, width = occupancy_map.shape
     goal_color = np.array(SEMANTIC_DICTS["colors"][goal_prompt][0]) / 255.0
@@ -232,7 +232,7 @@ def plan_path(start, goal_prompt, goal, occupancy_map, map_img):
         print(f"RRT Success! Found a path with {len(path)} steps.")
 
         # 7.2 leave obstacles
-        leave_obstacle_path = path_leave_obstacles(path, occupancy_map, repeat=2)
+        leave_obstacle_path = path_leave_obstacles(path, occupancy_map, mth_tengen_norm=False)
         print(f"Path left obstacles.")
 
         # 7.3. simplify the path
@@ -240,7 +240,7 @@ def plan_path(start, goal_prompt, goal, occupancy_map, map_img):
         print(f"Path simplified to {len(simple_path)} steps.")
 
         # 7.4. leave obstacles
-        leave_obstacle_simple_path = path_leave_obstacles(simple_path, occupancy_map, mth_near_obs=False)
+        leave_obstacle_simple_path = path_leave_obstacles(simple_path, occupancy_map)
         print(f"Path left obstacles.")
 
         return leave_obstacle_simple_path, simple_path, leave_obstacle_path, tree_arr[:num_nodes], parents
@@ -327,7 +327,7 @@ def path_leave_obstacles(path, occupancy_map, mth_tengen_norm=True, mth_near_obs
         # 2. binary search: find the exact boundary
         low = t
         high = t + step
-        while not abs(high - low) < 1.42: # ensure px level precision
+        while not abs(high - low) < 1: # ensure px level precision
             mid = (low + high) / 2.0
             if check_free(mid, P_curr, N, P_prev, P_next):
                 low = mid  # this mid is collision free
@@ -346,7 +346,7 @@ def path_leave_obstacles(path, occupancy_map, mth_tengen_norm=True, mth_near_obs
             
             ## 1. move according to norm
             if mth_tengen_norm:
-                # tengent vector: (prev - next) point
+                # tangent vector: (prev - next) point
                 dx = P_next[0] - P_prev[0]
                 dy = P_next[1] - P_prev[1]
                 length = np.hypot(dx, dy)
