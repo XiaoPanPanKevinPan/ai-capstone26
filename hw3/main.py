@@ -8,7 +8,6 @@ import numpy as np
 from map_processor import load_and_filter_map, select_start, get_goal_pixels
 from navigator import init_sim, execute_waypoint_path
 
-
 POINT_CLOUD_DATA = "semantic_3d_pointcloud/point.npy"
 COLOR_DATA = "semantic_3d_pointcloud/color01.npy"
 
@@ -55,6 +54,7 @@ def run_in_sim(start_world: Tuple[float, float], world_path: List[Tuple[float, f
     id = SEMANTIC_DICTS["indices"][goal_prompt]
     # abandoned since the coordination mapping is weird
 
+    {
     # if id is None:
     #     # load "../hw0/replica_v1/apartment_0/habitat/info_semantic.json"
     #     import json
@@ -104,14 +104,15 @@ def run_in_sim(start_world: Tuple[float, float], world_path: List[Tuple[float, f
     #     except Exception as e:
     #         print(f"Error: Could not dynamically load info_semantic.json: {e}")
     #         return
+    }
         
     execute_waypoint_path(world_path, sim, agent, id)
 
 
-    
 def dist(p1, p2):
     return float(np.hypot(p1[0] - p2[0], p1[1] - p2[1]))
-    
+
+
 def is_collision_free(p1, p2, occupancy_map):
     height, width = occupancy_map.shape
     d = dist(p1, p2)
@@ -126,6 +127,7 @@ def is_collision_free(p1, p2, occupancy_map):
         if occupancy_map[iv, iu] > 0.5: # > 0.5 means obstacle
             return False
     return True
+
 
 # Note: Goal is a directional hint. 
 #       We should stop once the surrounding meets goal_prompt
