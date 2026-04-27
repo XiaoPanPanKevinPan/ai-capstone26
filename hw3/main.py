@@ -1,13 +1,16 @@
+from map_processor import MAP_RESOLUTION
 import random
 import sys
 from typing import List, Tuple
+import cv2
+import numpy as np
 
 from map_processor import load_and_filter_map, select_start, get_goal_pixels
 from navigator import init_sim, execute_waypoint_path
 
 
 POINT_CLOUD_DATA = "semantic_3d_pointcloud/point.npy"
-COLOR_DATA = "semantic_3d_pointcloud/color0255.npy"
+COLOR_DATA = "semantic_3d_pointcloud/color01.npy"
 
 # Sample semantic color and index dictionaries for a few object categories. 
 # Check hw0/replica_v1/apartment_0/habitat/info_semantic.json and 
@@ -18,11 +21,15 @@ SEMANTIC_DICTS = {
         "rack": [[0, 255, 133]],
         "cooktop": [[7, 255, 224]],
         "sofa": [[10, 0, 255]],
+        "cushion": [[255, 9, 92]],
+        "stair": [[173, 255, 0]]
     },
     "indices": {
         "rack": 8,
         "cooktop": 280,
         "sofa": 196,
+        "cushion": 430,
+        "stair": 192
     },
 }
 
@@ -44,7 +51,173 @@ def run_in_sim(start_world: Tuple[float, float], world_path: List[Tuple[float, f
     print(f"Spawning Agent at world position: ({start_x:.3f}, {start_z:.3f})")
 
     sim, agent, _ = init_sim(start_x=start_x, start_z=start_z)
-    execute_waypoint_path(world_path, sim, agent, SEMANTIC_DICTS["indices"][goal_prompt])
+
+    id = SEMANTIC_DICTS["indices"][goal_prompt]
+    # abandoned since the coordination mapping is weird
+
+    # if id is None:
+    #     # load "../hw0/replica_v1/apartment_0/habitat/info_semantic.json"
+    #     import json
+    #     import math
+    #     try:
+    #         with open("../hw0/replica_v1/apartment_0/habitat/info_semantic.json", "r") as f:
+    #             info = json.load(f)
+            
+    #         goal_x, goal_z = world_path[-1] # the "new_goal"
+    #         min_dist = float('inf')
+    #         best_id = None
+            
+    #         for obj in info.get("objects", []):
+    #             if obj.get("class_name") != goal_prompt:
+    #                 continue
+
+    #             center = obj.get("oriented_bbox", {}) \
+    #                 .get("abb", {}) \
+    #                 .get("center", None)
+    #             sizes = obj.get("oriented_bbox", {}) \
+    #                 .get("abb", {}) \
+    #                 .get("sizes", None)
+
+    #             if not center or not sizes:
+    #                 continue 
+
+    #             # 計算 2D 平面距離 Bounding Box 邊緣的最短距離
+    #             # 如果已經在 Box 內部，則 dx, dz 為 0，dist 為 0
+    #             # Note: [a, b, c] in JSON should map to [x, y, z] = [-a, c, -b]
+    #             center_in_world = [-center[0], center[2], -center[1]]
+    #             dx = max(0, abs(goal_x - center_in_world[0]) - sizes[0] / 2)
+    #             dz = max(0, abs(goal_z - center_in_world[2]) - sizes[2] / 2)
+    #             dist = math.hypot(dx, dz)
+                
+    #             if dist < min_dist:
+    #                 min_dist = dist
+    #                 best_id = int(obj["id"])
+                            
+    #         if best_id is not None and min_dist < 1.0: # 1m
+    #             id = best_id
+    #             print(f"Dynamically resolved '{goal_prompt}' to instance ID: {id} (distance: {min_dist:.3f}m from goal point)")
+    #         else:
+    #             print(f"Error: Could not find corresponding '{goal_prompt}' in info_semantic.json")
+    #             print(f"So far the best is {best_id} with distance {min_dist:.3f}m")
+    #             print(f"Goal point: ({goal_x}, {goal_z})")
+    #             return
+    #     except Exception as e:
+    #         print(f"Error: Could not dynamically load info_semantic.json: {e}")
+    #         return
+        
+    execute_waypoint_path(world_path, sim, agent, id)
+
+
+# Note: Goal is a directional hint. 
+#       We should stop once the surrounding meets goal_prompt
+def plan_path(start, goal_prompt, goal, occupancy_map, map_img):
+    MAX_ITER = 50000
+    STEP_SIZE = 0.20 * MAP_RESOLUTION   # 20cm per step
+    GOAL_BIAS = 0.50                    # 50% chance to directly explore towards the goal
+    GOAL_DIST = 0.50 * MAP_RESOLUTION   # 50cm radius to accept the goal
+    
+    height, width = occupancy_map.shape
+    goal_color = np.array(SEMANTIC_DICTS["colors"][goal_prompt][0]) / 255.0
+        # the sementic color of the goal
+    
+    def dist(p1, p2):
+        return float(np.hypot(p1[0] - p2[0], p1[1] - p2[1]))
+        
+    def is_collision_free(p1, p2):
+        d = dist(p1, p2)
+        steps = int(d / 1.0) + 1  # sample every 1 pixel
+        for i in range(steps + 1):
+            t = i / steps if steps > 0 else 0
+            u = p1[0] + t * (p2[0] - p1[0])
+            v = p1[1] + t * (p2[1] - p1[1])
+            iu, iv = int(round(u)), int(round(v))
+            if iu < 0 or iu >= width or iv < 0 or iv >= height:
+                return False
+            if occupancy_map[iv, iu] > 0.5: # > 0.5 means obstacle
+                return False
+        return True
+
+    # preallocate np array as the tree
+    tree_arr = np.zeros((MAX_ITER + 2, 2), dtype=float)
+    tree_arr[0] = start
+    num_nodes = 1
+    
+    # dict for parents (node index : parent node index)
+    parents = {0: None}
+    
+    print("Running RRT...")
+    for i in range(MAX_ITER):
+        # 1. random sampling
+        if random.random() < GOAL_BIAS:
+            x_rand = goal
+        else:
+            x_rand = (random.uniform(0, width - 1), random.uniform(0, height - 1))
+            
+        # 2. find nearest node
+        diffs = tree_arr[:num_nodes] - x_rand
+        sq_dists = diffs[:, 0]**2 + diffs[:, 1]**2 # no sqrt makes it faster
+        nearest_idx = int(np.argmin(sq_dists))
+        x_nearest = tree_arr[nearest_idx]
+        
+        # 3. step from the nearest node
+        d = dist(x_nearest, x_rand)
+        if d <= STEP_SIZE:
+            x_new = x_rand
+        else:
+            theta = np.arctan2(x_rand[1] - x_nearest[1], x_rand[0] - x_nearest[0])
+            x_new = (
+                float(x_nearest[0] + STEP_SIZE * np.cos(theta)),
+                float(x_nearest[1] + STEP_SIZE * np.sin(theta))
+            )
+            
+        # 4. collision check
+        if not is_collision_free(x_nearest, x_new):
+            continue
+        
+        # 5. add node to tree array
+        new_idx = num_nodes
+        tree_arr[new_idx] = x_new
+        parents[new_idx] = nearest_idx
+        num_nodes += 1
+            
+        # 6. check if goal is reached 
+        # - the goal color should be in a rectangle centered at x_new
+
+        # 6.1. local map (a rectangle)
+        u_c, v_c = int(round(x_new[0])), int(round(x_new[1]))
+        r = int(GOAL_DIST)
+        u_min, u_max = max(0, u_c - r), min(width, u_c + r + 1)
+        v_min, v_max = max(0, v_c - r), min(height, v_c + r + 1)
+        local_map = map_img[v_min:v_max, u_min:u_max]
+        
+        # 6.2. check if the goal color is in the local map
+        mask_goal = np.all(np.isclose(local_map, goal_color, atol=10/255.0), axis=-1)
+        if not np.any(mask_goal):
+            continue
+
+        # 6.3. select the goal color in local map as the new goal
+        # np.where 對二維影像回傳的會是 (row_indices, col_indices) 也就是 (v, u)
+        # 必須注意 [1] 才是 u, [0] 才是 v，否則會發生 x, y 對調的 Bug!
+        goal_pixels = np.where(mask_goal)
+        new_goal = (goal_pixels[1][0] + u_min, goal_pixels[0][0] + v_min)
+        
+    
+        # 7. once found, stop and form the reverted path
+        path = []
+        curr = new_idx
+        while curr is not None:
+            path.append(tuple(tree_arr[curr]))
+            curr = parents[curr]
+        path.reverse()
+
+        # 7.1. append the new_goal in the end of the path 
+        #      (will be stripped before sending to simulator)
+        path.append(new_goal) 
+        
+        print(f"RRT Success! Found a path with {len(path)} steps.")
+        return path, tree_arr[:num_nodes], parents
+                    
+    return None, None, None
 
 
 def main():
@@ -52,11 +225,10 @@ def main():
 
     print("=== Step 1: Processing the 3D Map ===")
     # =============== TODO 1-2 ===============
-    # map_img, occupancy_map, ... = load_and_filter_map(POINT_CLOUD_DATA, COLOR_DATA)
-
+    map_img, occupancy_map, map_img_for_display, trans_info = load_and_filter_map(POINT_CLOUD_DATA, COLOR_DATA)
 
     print("=== Step 2: Selecting Agent Start and Goal Positions ===")
-    start = select_start(map_img)
+    start = select_start(map_img_for_display)
     goal_prompt, goal = pick_goal(map_img)
     print(f"Goal pixel selected at coordinates: {goal}")
 
@@ -65,25 +237,56 @@ def main():
     # =============== TODO 2 ===============
     # implement RRT path planner in plan_path()
 
-    # path = plan_path(start, goal, occupancy_map)
-    # if not path:
-    #     print("Planner could not find a path.")
-    #     sys.exit(1)
+    path, tree, parents = plan_path(start, goal_prompt, goal, occupancy_map, map_img)
+    if not path:
+        print("Planner could not find a path.")
+        sys.exit(1)
 
 
     print("=== Step 4: Visualizing the Planned Path ===")
     # =============== TODO 3 ===============
     # Visualize the planned path over the map
 
-    # visualize_path(...)
+    vis_map = (np.copy(map_img_for_display) * 255).astype(np.uint8)
+    vis_map = np.ascontiguousarray(vis_map) # prevent cv2 complaining
+        
+    # draw the RRT tree (light blue)
+    for idx in range(1, len(tree)):
+        parent_idx = parents[idx]
+        if parent_idx is not None:
+            pt_end = (int(tree[idx][0]), int(tree[idx][1]))
+            pt_start = (int(tree[parent_idx][0]), int(tree[parent_idx][1]))
+            cv2.line(vis_map, pt_start, pt_end, (255, 200, 150), 1)
+            cv2.circle(vis_map, pt_end, 1, (200, 200, 200), -1)
+
+    # draw the final path (red line) and nodes (green)
+    for i in range(len(path) - 1):
+        pt1 = (int(path[i][0]), int(path[i][1]))
+        pt2 = (int(path[i+1][0]), int(path[i+1][1]))
+        cv2.line(vis_map, pt1, pt2, (0, 0, 255), 1)
+        cv2.circle(vis_map, pt1, 1, (0, 255, 0), -1)
+        
+    # draw the goal point (black big circle)
+    new_goal = path[-1]
+    cv2.circle(vis_map, (int(new_goal[0]), int(new_goal[1])), 2, (0, 0, 0), -1)
+    
+    cv2.imshow("RRT Found Path", vis_map)
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
 
 
     print("=== Step 5: Translating Path to Habitat Simulator ===")
     # =============== TODO 4 ===============
     # Convert pixel path to world coordinates
     # world_path is a list of tuples(float, float) representing waypoints in world coordinates
-
-    # world_path = ... 
+    
+    min_u, min_v, map_resolution = trans_info
+    world_path = []
+    
+    for (u, v) in path:
+        x_world = (u / map_resolution) + min_u
+        z_world = (v / map_resolution) + min_v
+        world_path.append((x_world, z_world)) 
 
     run_in_sim(world_path[0], world_path, goal_prompt)
 

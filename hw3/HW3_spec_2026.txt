@@ -1,0 +1,155 @@
+AI Capstone
+Homework 3: A Robot Navigation Framework
+
+Announce: 2026/4/13, Due date: 2026/4/27
+Introduction
+In this assignment, you will use a semantic map of apartment_0 to navigate a
+robot to a specified destination (e.g., locating a target object). You will
+implement point-to-point navigation using the RRT algorithm.
+(Only the first floor of apartment_0 will be used.)
+There are mainly three parts:
+Part 1. 2D semantic map construction
+Use the provided semantic point cloud to get a 2D semantic map for
+navigation.
+Part 2. RRT algorithm implementation
+We use the RRT algorithm to find a navigable path from starting point A
+to goal point B (a specific item).
+Part 3. Robot navigation
+An agent can navigate automatically by following the path calculated by
+RRT to find specific items.
+
+Implementation
+You can either complete the TODOs in the provided template code or
+implement your own version as long as you follow the below guides.
+Example Final Result (Target object: cooktop)
+
+Part 1: 2D semantic map construction
+The following describes the steps for generating a 2D semantic map.
+1. We provide a 3D semantic map of the first floor of apartment_0 under
+
+hw3/semantic_3d_pointcloud. Remove ceiling and floor points of the
+point cloud and do any extra processing you need.
+2. Save coordinates and colors of the points (the color should be the same as
+color map for 101 categories)
+3. Use any libraries (e.g. matplotlib) to plot a scatter graph (x-coordinate,
+z-coordinate in the point clouds) with the points you saved
+
+Notes for Step 3:
+● The scale relationship between coordinates in point.npy and
+apartment_0 is apartment_0 = points array * 10000. / 255.
+● There are two versions of the color array. The value of RGB in
+color01.npy is in the range [0, 1] while color0255.npy is in the range
+[0, 255]. If you have problems using color01.npy to find labels because
+of floating-point errors, you can use color0255.npy.
+Note: You need to find the relationship between the map (pixel) coordinate and
+the Habitat coordinates. It’s necessary for Part 3. You can add extra points to
+calculate the scale or create different maps to help you.
+Example map:
+
+[After removing ceiling]
+
+[After Removing ceiling and floor]
+
+Part 2: RRT Algorithm
+You will implement the RRT algorithm, which calculates a navigable path from
+the 2D map we created from part 1. For more details on the algorithm, please
+check details on this link, RRT [1] , or the slide in the class.
+
+You need to search for these target categories, including rack, cushion, sofa,
+stair, and cooktop. You can check the color map for 101 categories for the
+corresponding colors.
+Input:
+1. A target category you want to search
+Just input a string (e.g:, rack)
+2. Choose a starting point to navigate by clicking on the map (on the
+visualized GUI)
+Output:
+1. A map with a path from a starting point to a target point. The
+target point is a point in front of the target item. You can use any
+method to decide the location of the point.
+2. Waypoints on this route
+The xy-coordinate calculated by RRT is in the pixel coordinate. To
+navigate in Habitat, you need to convert them into the coordinate of the
+first floor apartment_0.
+Example of a RRT output:
+
+Part 3: Robot Navigation
+1. Based on the path you get in Part 2, let the agent move using these three
+commands: "move_forward", “turn_left”, and “turn_right”.
+● You can modify it from hw0/load.py to do navigation or use
+hw3/navigator.py
+
+● We can define the amount of how much the agent should move and
+turn for each step by changing the following config
+
+2. Please highlight the target with a transparent mask while navigating so
+that we can clearly visualize the target category.
+● Ref: tutorial_adding_images
+Examples of a transparent mask
+
+Grading
+Online Demo 30%
+We will specify a target label among: rack, cushion, sofa, stair, and
+cooktop and a starting point. You should show us the corresponding
+navigation result on the first floor of apartment_0, including the ability
+to select the starting point on the map, display the RRT results, and
+
+visualize the robot moving along the planned path.
+a.​ 10 points per object (We will randomly pick 2 out of the 5)
+b.​ 10 points for question and answer.
+Report 70%
+Your report should include the following content (in English):
+1. Implementation (50%)
+a. Code
+Detailed explanation of your implementation with code screenshots.
+For example:
+​ - How do you process the 3D pointcloud?
+- How do you do the RRT algorithm?
+b. Result and Discussion
+- Show and discuss the results from the RRT algorithm with
+different start points and targets.
+- Discuss about the robot navigation results.
+- Anything you want to discuss.
+c. Reference
+- Any reference you take
+2. Questions (20%)
+a. In the RRT algorithm, you can adjust the step size and bias (the
+number balance between exploration and exploitation). Please explain
+how the two numbers affect the RRT sampling result. (15%)
+b. If you want to apply the indoor navigation pipeline in the real world,
+what problems may you encounter? (5%)
+Bonus 10%
+Try to improve the RRT algorithm by comparing and discussing it with the
+original one.
+QA page
+The following link is to the QA page for Homework 3. If you have any
+questions, please post your questions to this Notion page. We will answer
+them as soon as possible.
+
+Link To Notion Page
+
+Submission
+Due date: 2026/4/27
+Please directly compress your code files and report (.pdf) into a zip file with
+this convention {STUDENT_ID}_hw3.zip and submit it to the New E3
+System. ex : 123456789_hw3.zip
+The file structure should look like:
+
+{student_id}_hw3.zip
+┣ README.md (Explain how to run your code)
+┣ report.pdf
+┣ src
+┣ main.py
+┗ (other python files, .py format, if you have)
+
+●​ Wrong submission format leads to -10 points.
+●​ Late submission leads to -20 points per day.
+●​ Plagiarism is strictly prohibited, including assignments written on
+GitHub. If we find any instances, it will result in a zero score without
+any room for objection.
+●​ Reports not written in English will receive a score of zero.
+
+References
+[1] RRT
+
+
