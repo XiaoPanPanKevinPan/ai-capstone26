@@ -197,9 +197,24 @@ def plan_path(start, goal_prompt, goal, occupancy_map, map_img):
         if not np.any(mask_goal):
             continue
 
-        # 6.3. select the goal color in local map as the new goal
-        goal_pixels = np.where(mask_goal)
-        new_goal = (goal_pixels[1][0] + u_min, goal_pixels[0][0] + v_min)
+        # 6.3. check if the goal color is in euclidean distance
+        #      and select the closest goal color in local map as the new goal
+        
+        goal_pixels_v, goal_pixels_u = np.where(mask_goal)
+        
+        # Calculate euclidean distance from x_new to all found goal pixels
+        du = goal_pixels_u + u_min - x_new[0]
+        dv = goal_pixels_v + v_min - x_new[1]
+        dist_sq = du**2 + dv**2
+        
+        min_idx = np.argmin(dist_sq)
+        
+        # Square corners are > GOAL_DIST. Check if the closest point is truly within the Euclidean circle
+        if dist_sq[min_idx] > GOAL_DIST**2:
+            continue
+            
+        # The exact closest point is the final landing goal
+        new_goal = (goal_pixels_u[min_idx] + u_min, goal_pixels_v[min_idx] + v_min)
         
         # 7. once found, stop and form the reverted path
         path = []
@@ -215,7 +230,7 @@ def plan_path(start, goal_prompt, goal, occupancy_map, map_img):
         print(f"RRT Success! Found a path with {len(path)} steps.")
 
         # 7.2 leave obstacles
-        leave_obstacle_path = path_leave_obstacles(path, occupancy_map)
+        leave_obstacle_path = path_leave_obstacles(path, occupancy_map, repeat=2)
         print(f"Path left obstacles.")
 
         # 7.3. simplify the path
@@ -223,7 +238,7 @@ def plan_path(start, goal_prompt, goal, occupancy_map, map_img):
         print(f"Path simplified to {len(simple_path)} steps.")
 
         # 7.4. leave obstacles
-        leave_obstacle_simple_path = path_leave_obstacles(simple_path, occupancy_map)
+        leave_obstacle_simple_path = path_leave_obstacles(simple_path, occupancy_map, mth_near_obs=False)
         print(f"Path left obstacles.")
 
         return leave_obstacle_simple_path, simple_path, leave_obstacle_path, tree_arr[:num_nodes], parents
@@ -249,70 +264,41 @@ def simplify_path(path, occupancy_map):
     simple_path.append(path[-1])
     return simple_path
     
-def path_leave_obstacles(path, occupancy_map):
+def path_leave_obstacles(path, occupancy_map, mth_tengen_norm=True, mth_near_obs=True, repeat=5):
     if len(path) <= 3:
         return path
         
     height, width = occupancy_map.shape
     new_path = list(path)
-    
-    # helper: spiral search for nearest obstacle
-    def find_nearest_obstacle(p, max_r=50):
+
+    # helper: quick search for nearest obstacle
+    def find_nearest_obstacle(p, max_r=30):
         u0, v0 = int(round(p[0])), int(round(p[1]))
-        if occupancy_map[min(max(v0, 0), height-1), min(max(u0, 0), width-1)] > 0.5:
-            return (u0, v0)
-
-    # helper: spiral search for nearest obstacle
-    def find_nearest_obstacle(p, max_r=50):
-        u0, v0 = int(round(p[0])), int(round(p[1]))
-        if occupancy_map[min(max(v0, 0), height-1), min(max(u0, 0), width-1)] > 0.5:
-            return (u0, v0)
-
-        def find_nearest_at_r(r):
-            best_dist_sq = float('inf')
-            nearest_in_r = None
-            for du in range(-r, r+1):
-                for dv in [-r, r]:
-                    u, v = u0 + du, v0 + dv
-                    if 0 <= u < width and 0 <= v < height and occupancy_map[v, u] > 0.5:
-                        dist_sq = du**2 + dv**2
-                        if dist_sq < best_dist_sq:
-                            best_dist_sq = dist_sq
-                            nearest_in_r = (du, dv)
-            for dv in range(-r+1, r):
-                for du in [-r, r]:
-                    u, v = u0 + du, v0 + dv
-                    if 0 <= u < width and 0 <= v < height and occupancy_map[v, u] > 0.5:
-                        dist_sq = du**2 + dv**2
-                        if dist_sq < best_dist_sq:
-                            best_dist_sq = dist_sq
-                            nearest_in_r = (du, dv)
-            return nearest_in_r, best_dist_sq
         
-        nearest = None
-        nearest_r = max_r
-        nearest_dist_sq = float('inf')
+        # define a local window inside the map
+        v_min, v_max = max(0, v0 - max_r), min(height, v0 + max_r + 1)
+        u_min, u_max = max(0, u0 - max_r), min(width, u0 + max_r + 1)
         
-        for r in range(1, max_r):
-            pt, dist_sq = find_nearest_at_r(r)
-            if pt is not None:
-                nearest = pt
-                nearest_r = r
-                nearest_dist_sq = dist_sq
-                break
-
-        if nearest is None:
+        # slice the local window
+        window = occupancy_map[v_min:v_max, u_min:u_max]
+        
+        # get the local coordinates of obstacles
+        obs_v, obs_u = np.where(window > 0.5)
+        
+        if len(obs_v) == 0:
             return None
+            
+        # calculate the vector from center p to each obstacle
+        # (plus the boundary offset)
+        dv = obs_v - (v0 - v_min)
+        du = obs_u - (u0 - u_min)
         
-        # prevent ignoring the nearest obstacle, seach further
-        max_search_r = min(max_r, int(nearest_dist_sq ** 0.5) + 1)
-        for r in range(nearest_r + 1, max_search_r + 1):
-            pt, dist_sq = find_nearest_at_r(r)
-            if pt is not None and dist_sq < nearest_dist_sq:
-                nearest = pt
-                nearest_dist_sq = dist_sq
-                
-        return (u0 + nearest[0], v0 + nearest[1])
+        # calculate the Euclidean distance squared for all obstacles 
+        # and find the index of the minimum distance
+        min_idx = np.argmin(du**2 + dv**2)
+        
+        # convert the local coordinates of the nearest obstacle back to global coordinates
+        return (int(u_min + obs_u[min_idx]), int(v_min + obs_v[min_idx]))
 
     # check if offset P_curr by t * N, is it collision free to P_prev and P_next
     def check_free(t, P_curr, N, P_prev, P_next):
@@ -349,54 +335,57 @@ def path_leave_obstacles(path, occupancy_map):
         return low
 
     # do the whole path for five times
-    for pass_idx in range(5): 
+    for pass_idx in range(repeat): 
         # don't move start point and the last two points
         for i in range(1, len(new_path) - 2):
             P_prev = new_path[i-1]
             P_curr = new_path[i]
             P_next = new_path[i+1]
             
-            # tengent vector: (prev - next) point
-            dx = P_next[0] - P_prev[0]
-            dy = P_next[1] - P_prev[1]
-            length = np.hypot(dx, dy)
-            if length < 1e-3:
-                continue
-                
-            # find the normal vector perpendicular to the tengent vector
-            N = (-dy / length, dx / length)
-            
             ## 1. move according to norm
-            # find the boundaries (happen to be not collision free)
-            t_pos = boundary_search(P_curr, N, P_prev, P_next, 1)
-            t_neg = boundary_search(P_curr, N, P_prev, P_next, -1)
-            
-            # take the middle of the two boundaries as the new path point
-            opt_t = (t_pos + t_neg) / 2.0
-            new_path[i] = (P_curr[0] + opt_t * N[0], P_curr[1] + opt_t * N[1])
+            if mth_tengen_norm:
+                # tengent vector: (prev - next) point
+                dx = P_next[0] - P_prev[0]
+                dy = P_next[1] - P_prev[1]
+                length = np.hypot(dx, dy)
+                if length < 1e-3:
+                    continue
+                    
+                # find the normal vector perpendicular to the tengent vector
+                N = (-dy / length, dx / length)
+                
+                # find the boundaries (happen to be not collision free)
+                t_pos = boundary_search(P_curr, N, P_prev, P_next, 1)
+                t_neg = boundary_search(P_curr, N, P_prev, P_next, -1)
+                
+                # take the middle of the two boundaries as the new path point
+                opt_t = (t_pos + t_neg) / 2.0
+                new_path[i] = (P_curr[0] + opt_t * N[0], P_curr[1] + opt_t * N[1])
+                P_curr = new_path[i] # Update P_curr from Step 1
 
             ## 2. move leaving nearest obstacle
-            P_curr = new_path[i] # Update P_curr from Step 1
-            O1 = find_nearest_obstacle(P_curr)
-            if O1 is None:
-                continue
+            if mth_near_obs:
+                O1 = find_nearest_obstacle(P_curr)
+                if O1 is None:
+                    continue
 
-            dx_o = P_curr[0] - O1[0]
-            dy_o = P_curr[1] - O1[1]
-            length_o = np.hypot(dx_o, dy_o)
+                dx_o = P_curr[0] - O1[0]
+                dy_o = P_curr[1] - O1[1]
+                length_o = np.hypot(dx_o, dy_o)
 
-            # Only push if we are reasonably far from O1 (don't divide by zero)
-            if length_o < 1e-3:
-                continue
+                # Only push if we are reasonably far from O1 (don't divide by zero)
+                if length_o < 1e-3:
+                    continue
 
-            # same procedure as the above
-            M = (dx_o / length_o, dy_o / length_o)
-            
-            t_pos_o = boundary_search(P_curr, M, P_prev, P_next, 1)
-            t_neg_o = boundary_search(P_curr, M, P_prev, P_next, -1)
-            
-            opt_t_o = (t_pos_o + t_neg_o) / 2.0
-            new_path[i] = (P_curr[0] + opt_t_o * M[0], P_curr[1] + opt_t_o * M[1])
+                # same procedure as the above
+                M = (dx_o / length_o, dy_o / length_o)
+                
+                t_pos_o = boundary_search(P_curr, M, P_prev, P_next, 1)
+                t_neg_o = boundary_search(P_curr, M, P_prev, P_next, -1)
+                
+                opt_t_o = (t_pos_o + t_neg_o) / 2.0
+                new_path[i] = (P_curr[0] + opt_t_o * M[0], P_curr[1] + opt_t_o * M[1])
+                P_curr = new_path[i] # Update P_curr from Step 2
             
     return new_path
 
