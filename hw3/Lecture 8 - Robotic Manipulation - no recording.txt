@@ -1,0 +1,1412 @@
+Robotic Manipulation
+Perception and Decision Making in Intelligent Systems
+
+1
+
+Robot Manipulation Task: block insertion
+
+To prepick pose
+
+To pick pose
+
+Perception and Decision Making in Intelligent Systems
+
+To preplace pose
+
+To place pose
+
+The Concept Map for Robot Manipulation
+
+Perception and Decision Making in Intelligent Systems
+
+Forward
+Kinematics
+
+6D Pose
+Estimation
+
+Inverse
+Kinematics
+
+Grasping
+
+Homework 4
+•Forward Kinematics
+• 4 D-H parameters p. 23 (Task1)
+• D-H conventions p. 36 and 37 (Task1)
+
+•Differential Kinematics
+• Geometric Jacobian p. 57 (Task1)
+
+•Inverse Kinematics
+• Iterative inverse kinematics p. 45 (Task2)
+• Bonus: other methods you like (Task2)
+
+Perception and Decision Making in Intelligent Systems
+
+4
+
+Robot Manipulator
+• A robot arm (aka serial link manipulator) consists of series of
+rigid links, connected by joints (motors)
+• Joints provide relative motion
+• Links are rigid members between joints
+
+• Each joint provides a degree-of-freedom (DoF)
+• Most robot arms have 4 to 7 DoF
+
+Perception and Decision Making in Intelligent Systems
+
+5
+
+Types of Joint
+
+all of the higher degree-of-freedom joints
+can be described by combinations of one
+degree-of-freedom joints
+
+• Revolute joint
+
+• Single DoF
+• Rotate about an axis
+
+Revolute Joint
+
+• Prismatic joint
+
+• Single DoF
+• Translation along an axis
+
+• Helical joint
+
+• Also called screw joint
+• Single DoF
+• Simultaneous rotation and translation
+about the screw axis
+
+Perception and Decision Making in Intelligent Systems
+
+Prismatic Joint
+
+Helical Joint
+
+6
+
+End-effector
+• A device or tool connected to the end of a robot that enables to
+perform a specific task
+• Types
+• Grippers
+
+• Grasp and manipulate objects
+
+• Tools
+
+• to perform a process
+• Spray painting, cutting or 3D print
+
+Perception and Decision Making in Intelligent Systems
+
+7
+
+End-effector
+
+Rigid gripper with different complexity
+Perception and Decision Making in Intelligent Systems
+
+8
+
+End-effector: Grippers
+
+Suction gripper
+Perception and Decision Making in Intelligent Systems
+
+https://transporternets.github.io/
+
+Perception and Decision Making in Intelligent Systems
+
+10
+
+How the Tesla Model S is Made?
+
+https://youtu.be/8_lfxPI5ObM
+
+Perception and Decision Making in Intelligent Systems
+
+11
+
+Serial Link Arms
+• Number the links in sequence
+• For a robot with � joints:
+•
+•
+•
+•
+
+Base is Link 0.
+End-effector (tool) is attached to Link �.
+Joint � connects Link � − 1 to Link �
+We define the joint variable �� for joint � as:
+
+Revolute Joint
+
+Prismatic Joint
+Perception and Decision Making in Intelligent Systems
+
+12
+
+Manipulator Kinematics
+• Kinematics describes the position and motion of a robot, without
+considering the forces required to cause the motion
+• Forward Kinematics:
+• Given the value for each joint variable, determine the position and
+orientation of the end-effector (gripper, tool) frame
+
+• Each link is a rigid body
+
+• Describe the position and orientation of a rigid body
+• Attach a coordinate frame to the body.
+• Specify the position and orientation of the coordinate frame relative to
+some reference frame
+
+Perception and Decision Making in Intelligent Systems
+
+13
+
+Kinematic Structure in 2D
+
+Perception and Decision Making in Intelligent Systems
+
+14
+
+2D Transformation (Recap)
+Two reference Frame 0 and 1, a 2D point 1P in reference frame 1
+�0
+
+�1
+
+�
+��
+
+�
+
+��
+
+�0
+
+Perception and Decision Making in Intelligent Systems
+
+�1
+
+0P= �� ��
+�
+
+�
+�
+�
+�� =
+�
+02
+
+�표 �
+R=
+���
+
+��
+1
+
+− ���
+�표 �
+
+��
+d=
+��
+
+15
+
+Composition of Transformations (Recap)
+�0
+
+�01
+
+�0
+
+�1
+
+�1
+
+�12
+
+�1 = ����2
+
+Perception and Decision Making in Intelligent Systems
+
+�
+�2
+
+�02
+
+�0 = ����1
+
+�2
+
+�0 = �������2
+16
+
+Two link Planar Arm
+0�
+
+1
+
+k2
+n
+i
+L
+0�
+
+• Attach a coordinate frame to each link
+
+1
+
+Link 1
+
+0�
+
+2
+
+Perception and Decision Making in Intelligent Systems
+
+• What we want to know is ��2 and we know
+it can be computed by ������
+• Express ��−1
+as a function of ��
+�
+
+17
+
+Two Link Case
+�1
+�0
+
+�1
+
+�1
+�0
+
+�1 sin �1
+
+�2
+
+�1
+
+�2
+
+�1 cos �1
+
+Perception and Decision Making in Intelligent Systems
+
+�2
+
+�2
+
+Assume:
+• �� is the length of link i
+• �� is rotation angle of joint i
+
+cos �1 − sin �1 �1 cos �1
+�� = sin �
+cos �1 �1 sin �1
+�
+1
+0
+0
+1
+cos �2 − sin �2 �2 cos �2
+1� = sin �
+cos �2 �2 sin �2
+2
+2
+0
+0
+1
+
+18
+
+Forward Kinematic
+• The forward kinematic map gives the position and orientation of
+the end-effector frame as a function of the joint angles
+0� = �(� , …, � ) =0� (� )… �−1� (� )
+� �
+�
+1 1
+1
+�
+• For the two-link planar arm, we have
+cos �1
+0� = sin �
+2
+1
+0
+
+− sin �1
+cos �1
+0
+
+�1 cos �1
+�1 sin �1
+1
+
+cos �2
+sin �2
+0
+
+− sin �2
+cos �2
+0
+
+�2 cos �2
+�2 sin �2
+1
+
+cos (�1 + �2 ) − sin (�1 + �2 ) �1 cos �1 + �2 cos (�1 + �2 )
+= sin (�1 + �2 ) cos (�1 + �2 ) �1 sin �1 + �2 sin (�1 + �2 )
+0
+0
+1
+
+Rotation with �1 + �2
+
+Perception and Decision Making in Intelligent Systems
+
+�1 + �2
+
+19
+
+Question?
+
+Perception and Decision Making in Intelligent Systems
+
+20
+
+Forward Kinematic in 3D
+●
+
+6 parameters needed (x, y, z, roll, pitch, yaw) for each
+transformation matrix
+
+Can we represent the reference frame differently?
+Perception and Decision Making in Intelligent Systems
+
+https://www.youtube.com/watch?v=09I15RO49vg
+
+Forward Kinematics Using Denavit-Hartenberg (DH) Parameters
+●
+
+Introduced by Jacques Denavit and Richard Hartenberg in 1955
+
+●
+
+Minimum number of parameters to describe forward kinematics (only 4
+parameters needed)
+
+https://youtu.be/rA9tm0gTln8
+
+Perception and Decision Making in Intelligent Systems
+
+Forward Kinematics Using Denavit-Hartenberg (DH) Parameters
+●
+
+Minimum number of parameters to describe forward kinematics (only 4
+parameters needed)
+One example:
+-
+
+θi : angle about zi-1, make xi-1 align to xi
+di : offset along zi-1 to the common normal
+ai : length of the common normal
+αi : angle about common normal (xi-1, xi), make zi-1
+align to zi
+Note:
+1.
+2.
+3.
+
+ai and αi are fixed
+θi is variable if joint i is revolute
+di is variable if joint i is prismatic
+
+Perception and Decision Making in Intelligent Systems
+
+ai
+xi-1
+
+θi
+
+yi
+αi
+
+xi
+
+zi
+di
+
+zi-1
+xi-1
+
+common normal of 2 z-axis
+
+yi-1
+
+Forward Kinematics Using Denavit-Hartenberg (DH) Parameters
+●
+
+Minimum number of parameters to describe forward kinematics (only 4
+parameters needed)
+yi
+
+One example:
+-
+
+xi
+
+θi : angle about zi-1, make xi-1 align to xi
+di : offset along zi-1 to the common normal
+ai : length of the common normal
+αi : angle about common normal (xi-1, xi), make zi-1
+align to zi
+
+zi
+
+zi-1
+xi-1
+
+Perception and Decision Making in Intelligent Systems
+
+common normal of 2 z-axis
+
+yi-1
+
+Forward Kinematics Using Denavit-Hartenberg (DH) Parameters
+●
+
+Minimum number of parameters to describe forward kinematics (only 4
+parameters needed)
+yi
+
+One example:
+-
+
+xi
+
+θi : angle about zi-1, make xi-1 align to xi
+di : offset along zi-1 to the common normal
+ai : length of the common normal
+αi : angle about common normal (xi-1, xi), make zi-1
+align to zi
+
+zi
+
+zi-1
+xi-1
+
+Perception and Decision Making in Intelligent Systems
+
+common normal of 2 z-axis
+
+yi-1
+θi
+
+Forward Kinematics Using Denavit-Hartenberg (DH) Parameters
+●
+
+Minimum number of parameters to describe forward kinematics (only 4
+parameters needed)
+yi
+
+One example:
+-
+
+θi : angle about zi-1, make xi-1 align to xi
+di : offset along zi-1 to the common normal
+ai : length of the common normal
+αi : angle about common normal (xi-1, xi), make zi-1
+align to zi
+
+xi
+zi
+
+zi-1
+
+yi-1
+xi-1
+
+Perception and Decision Making in Intelligent Systems
+
+common normal of 2 z-axis
+
+Forward Kinematics Using Denavit-Hartenberg (DH) Parameters
+●
+
+Minimum number of parameters to describe forward kinematics (only 4
+parameters needed)
+yi
+
+One example:
+-
+
+θi : angle about zi-1, make xi-1 align to xi
+di : offset along zi-1 to the common normal
+ai : length of the common normal
+αi : angle about common normal (xi-1, xi), make zi-1
+align to zi
+
+xi
+zi
+di
+zi-1
+
+yi-1
+xi-1
+
+Perception and Decision Making in Intelligent Systems
+
+common normal of 2 z-axis
+
+Forward Kinematics Using Denavit-Hartenberg (DH) Parameters
+●
+
+Minimum number of parameters to describe forward kinematics (only 4
+parameters needed)
+One example:
+-
+
+θi : angle about zi-1, make xi-1 align to xi
+di : offset along zi-1 to the common normal
+ai : length of the common normal
+αi : angle about common normal (xi-1, xi), make zi-1
+align to zi
+
+Perception and Decision Making in Intelligent Systems
+
+zi-1
+
+yi
+yi-1
+xi-1
+
+xi
+zi
+
+common normal of 2 z-axis
+
+Forward Kinematics Using Denavit-Hartenberg (DH) Parameters
+●
+
+Introduced by Jacques Denavit and Richard Hartenberg in 1955
+
+●
+
+Minimum number of parameters to describe forward kinematics (only 4
+parameters needed)
+
+One example:
+-
+
+θi : angle about zi-1, make xi-1 align to xi
+di : offset along zi-1 to the common normal
+ai : length of the common normal
+αi : angle about common normal (xi-1, xi), make zi-1
+align to zi
+
+Perception and Decision Making in Intelligent Systems
+
+zi-1
+
+yi-1
+
+yi
+
+ai
+
+xi-1
+
+xi
+zi
+
+common normal of 2 z-axis
+
+Forward Kinematics Using Denavit-Hartenberg (DH) Parameters
+●
+
+Introduced by Jacques Denavit and Richard Hartenberg in 1955
+
+●
+
+Minimum number of parameters to describe forward kinematics (only 4
+parameters needed)
+
+yzi i-1
+
+One example:
+-
+
+θi : angle about zi-1, make xi-1 align to xi
+di : offset along zi-1 to the common normal
+ai : length of the common normal
+αi : angle about common normal (xi-1, xi), make zi-1
+align to zi
+
+Perception and Decision Making in Intelligent Systems
+
+yi-1
+xxi-1i
+
+zi
+
+common normal of 2 z-axis
+
+Forward Kinematics Using Denavit-Hartenberg (DH) Parameters
+●
+
+Introduced by Jacques Denavit and Richard Hartenberg in 1955
+
+●
+
+Minimum number of parameters to describe forward kinematics (only 4
+parameters needed)
+
+One example:
+-
+
+θi : angle about zi-1, make xi-1 align to xi
+di : offset along zi-1 to the common normal
+ai : length of the common normal
+αi : angle about common normal (xi-1, xi), make zi-1
+align to zi
+
+Perception and Decision Making in Intelligent Systems
+
+yzi i-1
+αi
+
+yi-1
+xxi-1i
+
+zi
+
+common normal of 2 z-axis
+
+Forward Kinematics Using Denavit-Hartenberg (DH) Parameters
+●
+
+Introduced by Jacques Denavit and Richard Hartenberg in 1955
+
+●
+
+Minimum number of parameters to describe forward kinematics (only 4
+parameters needed)
+
+yi
+
+One example:
+-
+
+θi : angle about zi-1, make xi-1 align to xi
+di : offset along zi-1 to the common normal
+ai : length of the common normal
+αi : angle about common normal (xi-1, xi), make zi-1
+align to zi
+
+Perception and Decision Making in Intelligent Systems
+
+xi
+zi
+
+common normal of 2 z-axis
+
+Forward Kinematics Using Denavit-Hartenberg (DH) Parameters
+Transformation matrix expansion
+ai
+xi-1
+
+θi
+
+yi
+αi
+
+xi
+
+zi
+di
+
+zi-1
+xi-1
+
+Perception and Decision Making in Intelligent Systems
+
+yi-1
+
+common normal of 2 z-axis
+
+Franka Emika
+Use modified D-H conventions
+
+shorturl.at/cjv06
+
+Perception and Decision Making in Intelligent Systems
+
+https://link.springer.com/chapter/10.1007/978-3-030-75259-0_11
+34
+
+Two conventions for the D-H parameters
+Classic D-H Convention
+ai
+xi-1
+
+θi
+
+Modified D-H Convention
+
+yi
+αi
+
+xi
+
+zi
+di
+
+zi-1
+xi-1
+Notes
+●
+●
+
+common normal of 2 z-axis
+
+yi-1
+
+coordinates of Oi is put on axis i+1 in classic D-H
+convention
+this is what we have learned in previous slides
+
+Perception and Decision Making in Intelligent Systems
+
+Notes
+●
+
+coordinates of Oi is put on the axis i, not the axis i+1 in
+modified D-H convention
+
+Two conventions and their constraints
+
+Modified D-H Convention
+
+Classic D-H Convention
+
+Constraints
+●
+●
+●
+
+the Xi-axis is perpendicular to the Zi–1
+the Xi-axis intersects Zi–1
+the origin of joint i is at the intersection of Xi and Zi
+
+Perception and Decision Making in Intelligent Systems
+
+Constraints
+●
+●
+●
+
+the Zi-axis is perpendicular to the Xi–1
+the Zi-axis intersects Xi–1
+the origin of joint i is at the intersection of Xi and Zi
+
+Classic D-H Conventions
+
+Perception and Decision Making in Intelligent Systems
+
+Modified D-H Conventions
+
+Perception and Decision Making in Intelligent Systems
+
+Quiz Time
+●
+
+Fill in the DH table using classic D-H convention
+
+(all the joints are revolute joints)
+
+Perception and Decision Making in Intelligent Systems
+
+joint variable
+
+Quiz Time
+●
+
+Fill in the DH table using classic D-H convention
+
+(all the joints are revolute joints)
+
+Perception and Decision Making in Intelligent Systems
+
+Quiz Time
+●
+
+Fill up the DH table using Modified DH convention
+
+(all the joints are revolute joints)
+
+Perception and Decision Making in Intelligent Systems
+
+Quiz Time
+●
+
+Fill up the DH table using Modified DH convention
+
+Perception and Decision Making in Intelligent Systems
+
+The Concept Map for Robot Manipulation
+
+Perception and Decision Making in Intelligent Systems
+
+Forward
+Kinematics
+
+6D Pose
+Estimation
+
+Inverse
+Kinematics
+
+Grasping
+
+Inverse Kinematic
+Given a desired end-effector pose ��
+
+Solve for �1 , …, �� to achieve a desired �� i.e., find ��1 , …, ��� such
+that �(��1 , …, ��� ) = ��
+We (human) are computing IK almost all the
+time (whenever we try to reach for anything).
+We can do this IK computation extremely
+efficient and robust
+A Challenging Problem!
+Perception and Decision Making in Intelligent Systems
+
+44
+
+Inverse Kinematic
+• For the two-link arm, the goal is to place the end-effector at a
+desired location (표2,� , 표2,� )
+• Task: Solve for �1 and �2 such that:
+
+표2,� = �1 cos �1 + �2 cos (�1 + �2 )
+표2,� = �1 sin �1 + �2 sin (�1 + �2 )
+
+∗ ∗ 표2,�
+cos (�1 + �2 ) − sin (�1 + �2 ) �1 cos �1 + �2 cos (�1 + �2 )
+0
+�2 = sin (�1 + �2 ) cos (�1 + �2 ) �1 sin �1 + �2 sin (�1 + �2 ) = ∗ ∗ 표2,�
+0 0
+1
+0
+0
+1
+
+• Recall that �1 and �2 are constants defined by the mechanical structure
+of the arm
+• This is a nonlinear set of equations in �1 and �2 --- and nonlinear
+equations can be very difficult to solve!
+
+Perception and Decision Making in Intelligent Systems
+
+45
+
+Geometric Methods
+• IK for any two adjacent links that are coplanar can be solved
+with trigonometry
+�2
+
+�2 = 표22,� + 표22,�
+�0
+�0
+
+�
+
+�1
+
+�2 = � − �
+
+Perception and Decision Making in Intelligent Systems
+
+Denote the coordinates of the
+origin of frame 2 by 표2,� , 표2,�
+
+The Law of Cosines:
+�2 = �21 + �22 − 2�1 �2 cos �
+Define: � ≝
+
+�21 +�22 −�2
+2�1 �2
+
+= cos �
+
+Then sin � =± 1 − �2
+
+± 1− �
+Finally, � = tan−1
+�
+
+2
+46
+
+Uniqueness
+2
+
+−1 ± 1− �
+• Is the solution unique for � = tan
+?
+�
+
+• No, we may choose either square root
+
+2
+
+−1 − 1− �
+• The second solution uses � = 푡��
+�
+
+“elbow UP” configuration
+
+Elbow UP
+�0
+
+Perception and Decision Making in Intelligent Systems
+
+which results in an
+�2
+
+�1
+k
+L in
+
+Link 1
+
+�0
+
+2
+
+�1
+
+Elbow DOWN
+47
+
+More General Robot Arms
+• No closed form solution
+
+Iterative Methods for Inverse Kinematics
+Perception and Decision Making in Intelligent Systems
+
+48
+
+Franka Emika
+7 revolute joints
+
+shorturl.at/cjv06
+
+Perception and Decision Making in Intelligent Systems
+
+https://link.springer.com/chapter/10.1007/978-3-030-75259-0_11
+49
+
+Inverse Method for IK
+• �� the desired value of the end-effector pose
+• Denote the forward kinematic map by �(�)
+• �(�) is a vector-valued function, each component gives one
+coordinate of the end-effector pose (e.g., position and
+orientation). If the end effector has � degrees of freedom and
+the robot has � joints,
+�1 (�)
+⋮
+�� ~�(�1 , …, �� ) =
+�� (�)
+
+Perception and Decision Making in Intelligent Systems
+
+50
+
+Iterative Method
+• Generate a sequence of values �� , �� , �� … until we find some
+�� such that �(�� ) is sufficiently close to �� , i.e.,
+� (� � ) − � � < �
+• At each iteration, we compute ��+� by
+��+� = �� + ∆�
+
+Perception and Decision Making in Intelligent Systems
+
+51
+
+Iterative Method
+• What is a good value for ∆�?
+• Gradient descent method
+
+�
+1
+�
+• minimize the value of function �(�) = (�(�) − � ) (�(�) − �� )
+2
+• by choosing the updates according to ∆� =− �� �� -- gradient w.r.t. �
+
+• For this problem, we define the iteration as
+��+� = �� − �� ��(�� )
+• We can use the scalar �� to determine the magnitude of the
+step size
+• But what is ��(�� )?
+
+Perception and Decision Making in Intelligent Systems
+
+52
+
+Calculate Error Gradient
+1
+�1 (�) − ��1
+�
+�
+�(�) = (�1 (�) − �1 ) (�2 (�) − �2 )
+2
+�2 (�) − ��2
+1
+1
+� 2
+� 2
+(
+)
+(
+)
+= (�1 � − �1 ) + �2 � − �2
+2
+2
+
+�
+�(�)
+��1
+� 1
+=
+��1 2
+=
+
+�1 (� ) − ��1
+
+2
+
++ �2 (� ) − ��2
+
+��(�) =
+
+2
+
+��1
+��
+(�1 (�) − ��1 ) + 2 (�2 (�) − ��2 )
+��1
+��1
+
+Perception and Decision Making in Intelligent Systems
+
+1
+�
+�(�) = (�(�) − �� ) (�(�) − �� )
+2
+
+=
+
+��
+��1
+��
+��2
+
+�
+�(�)
+��2
+� 1
+� 2
+(
+)
+=
+�1 � − �1
+��2 2
+2
+�
++ �2 (� ) − �2
+
+��1
+��
+(�1 (�) − ��1 ) + 2 (�2 (�) − ��2 )
+��2
+��2
+
+53
+
+Calculate Error Gradient
+��(�) =
+
+��
+��1
+��2
+�
+(�1 (�) − �1 ) +
+(�2 (�) − ��2 )
+��1
+��1
+��1
+=
+��
+��1
+��2
+�
+(�1 (�) − �1 ) +
+(�2 (�) − ��2 )
+��2
+��2
+��2
+
+��1
+��1
+=
+��1
+��2
+
+��2
+��1 �1 (�) − ��1
+��2 �2 (�) − ��2
+��2
+
+We can write this as a matrix equation
+
+And we recognize that
+
+��1
+��1
+��1
+��2
+
+��2
+��1
+��2
+��2
+
+= �� (�), the arm Jacobian
+
+= �� (�) (�(�) − �� )
+
+Perception and Decision Making in Intelligent Systems
+
+54
+
+Jacobian Method
+• Taylor series expansion for the forward kinematic map around
+the ith iteration
+
+• � �� + ∆�� = � �� + � �� ∆�� + ℎ. 표. 푡.
+• h.o.t. refers to higher order terms (these go to zero quickly as∆�� → 0)
+
+• If we neglect the higher order terms,∆�� would be
+• � �� + ∆�� − � �� ≈ � �� ∆��
+• ∆�� ≈ � �� ∆��
+
+Perception and Decision Making in Intelligent Systems
+
+55
+
+Differential Kinematics
+●
+
+Define the relationship between motion (velocity) in the joint space and
+motion (linear and angular velocity) in the task (Cartesian) space
+
+Changes in orientation ∆�
+
+Changes in positions ∆�
+
+https://www.diag.uniroma1.it/~deluca/rob1_en/11_DifferentialKinematics.pdf
+
+Perception and Decision Making in Intelligent Systems
+
+56
+
+Geometric Jacobian
+
+●
+
+geometric Jacobian
+
+https://homes.cs.washington.edu/~todorov/courses/cseP590/05_Kinematics.pdf
+
+Perception and Decision Making in Intelligent Systems
+
+Differential Kinematics: Geometric Jacobian
+●
+
+Expression of geometric Jacobian (A revolute joint)
+
+https://homes.cs.washington.edu/~todorov/courses/cseP590/05_Kinematics.pdf
+
+Perception and Decision Making in Intelligent Systems
+
+The Concept Map for Robot Manipulation
+
+Perception and Decision Making in Intelligent Systems
+
+Forward
+Kinematics
+
+6D Pose
+Estimation
+
+Inverse
+Kinematics
+
+Grasping
+
+6D Pose Estimation
+●
+
+6D pose is an important object representation in robot manipulation
+
+Perception and Decision Making in Intelligent Systems
+
+6D Pose Estimation: Template Pose Matching
+●
+
+How to obtain the 6D pose of an object?
+○
+
+Template pose matching
+
+object template 6D pose
+
+capture
+RGBD
+
+keypoint
+annotation
+
+corresponding
+points matching
+obtain 6D pose
+
+unknown object pose
+
+capture
+RGBD
+
+Perception and Decision Making in Intelligent Systems
+
+keypoint
+annotation
+
+6D Pose Estimation: Template Pose Matching
+An example in the real world:
+
+object template 6D pose
+Perception and Decision Making in Intelligent Systems
+
+unknown object pose in a scene
+
+6D Pose Estimation: Template Pose Matching
+An example in the real world:
+
+matching the object in the scene by using annotated keypoints
+Perception and Decision Making in Intelligent Systems
+
+6D Pose Estimation: Template Pose Matching
+An example in the real world:
+
+before matching
+Perception and Decision Making in Intelligent Systems
+
+after matching
+
+6D Pose Estimation: Other Approaches?
+●
+
+How to obtain the 6D pose of an object?
+○
+
+Learning based methods
+
+https://arxiv.org/pdf/1711.00199.pdf
+
+Perception and Decision Making in Intelligent Systems
+
+https://arxiv.org/pdf/1901.02970.pdf
+
+Grasping
+●
+
+Grasping is a very common action in robot manipulation
+○
+
+pick and place, rearrangement, tool use…
+
+Perception and Decision Making in Intelligent Systems
+
+6D Pose Estimation: Template Pose Matching
+●
+
+How to obtain the 6D pose of an object?
+○
+
+Template pose matching
+
+object template 6D pose
+
+capture
+RGBD
+
+keypoint
+annotation
+
+corresponding
+points matching
+obtain 6D pose
+
+unknown object pose
+
+capture
+RGBD
+
+Perception and Decision Making in Intelligent Systems
+
+keypoint
+annotation
+
+Grasping: other approaches
+●
+
+How to obtain the 6D pose of an object?
+○
+
+Learning-based methods
+
+https://arxiv.org/pdf/2104.01542v2.pdf
+
+Perception and Decision Making in Intelligent Systems
+
+The Concept Map for Robot Manipulation
+
+Perception and Decision Making in Intelligent Systems
+
+Forward
+Kinematics
+
+6D Pose
+Estimation
+
+Inverse
+Kinematics
+
+Grasping
+
+

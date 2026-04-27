@@ -1,0 +1,1121 @@
+Week
+
+Date
+
+Topic
+
+1
+
+2/23~2/27
+
+Introduction
+
+2
+
+3/2~3/6
+
+Recent Advances in Physical AI
+
+3
+
+3/9~3/13
+
+Data Pyramid in Physical AI
+
+3/16~3/20
+
+Introduction to Universal Manipulation
+Interface (UMI) and LeRobot
+
+5
+
+3/23~3/27
+
+Simultaneous Localization and Mapping
+
+HW2 Release
+
+6
+
+3/30~4/3
+
+Depth Estimation
+
+4/2: No lecture due to Qingming Festival
+
+4/6~4/10
+
+Path Planning
+
+4/6: No lecture due to Qingming Festival
+HW3 Release
+
+8
+
+4/13~4/17
+
+Robotic Manipulation
+
+4/13: No lecture; the lecture will be pre-recorded.
+
+9
+
+4/20~4/24
+
+Introduction to Robot Operating System
+(ROS) and ICRA'26 WBCD Challenge
+
+HW4 Release and course project spec release
+
+4/27~5/1
+
+Imitation Learning/Reinforcement
+Learning for Robotics Manipulation
+
+11
+
+5/4~5/8
+
+Vision-Language Action Models
+
+12
+
+5/11~5/15
+
+Introduction to Ontology Engineering
+
+13
+
+5/18~5/22
+
+Ontology-based Evaluation
+
+5/25~5/29
+
+Scenario-based Safety Validation and
+Policy Evaluation
+
+6/1~6/5
+
+Research Frontiers
+
+6/8~6/12
+
+*Course Project Presentation*
+
+4
+
+7
+
+10
+
+14
+15
+16
+AI Capstone
+
+Note
+
+HW1 Release
+
+5/4: No lecture; the lecture will be pre-recorded.
+HW5 Release
+
+6/1: the lecture will be online; 6/4: No lecture
+1
+
+Classical Robot Navigation System
+SLAM
+
+Localization
+
+AI Capstone
+
+Obstacle
+Detection
+
+Path
+Planning
+
+2
+
+AI Capstone
+
+https://www.reddit.com/r/waymo/comments/1hfvb5o/wa
+ymo_visualization_of_avoiding_a_scooter_accident/
+
+What is Path Planning?
+
+*Dynamics: the relationship between the
+forces acting on a robot and the resulting
+motion of the robot
+
+• Path planning is the process of computing a feasible path from
+an initial state to a target state, while satisfying constraints such
+as:
+• avoiding obstacles
+• minimizing cost (distance or time)
+
+• A pure geometric problem of finding a collision-free path without
+concerning the dynamics*, the duration of motion, or constraints
+on the motion*
+
+Motion Planning concerns dynamics, duration of motion,
+and constraints on the motion and the control inputs
+AI Capstone
+
+4
+
+Problem Formulation
+• Given an initial state q 𝑠 = 𝑞!"#$" and a desired final state 𝑞%&#' ,
+find a collision-free path q 𝑠 ∈ 𝒞($)) , where 𝑠 ∈ [0, 1].
+• 𝑞 𝑠 : Path
+• 𝒞($)) : free configuration space
+
+AI Capstone
+
+5
+
+Path vs Trajectory vs Policy
+• Path
+• geometric
+• no time
+
+• Trajectory
+• time-parameterized
+• could includes velocity, acceleration
+
+• Policy
+• mapping: state → action
+• used in reinforcement learning / learning-based planning
+
+AI Capstone
+
+6
+
+Types of Path Planning
+1. Graph-Based Methods
+• Discretize space into nodes and edges
+• Algorithms:
+• Dijkstra’s Algorithm
+• A* search algorithm
+
+• Good for structured environments
+
+2. Sampling-Based Methods
+• Randomly explore space instead of full discretization
+• Algorithms:
+• Rapidly-exploring Random Tree
+• Probabilistic Roadmap
+
+• Scales well to high-dimensional robotics problems
+
+AI Capstone
+
+7
+
+Types of Path Planning
+3. Optimization-Based Methods
+
+• Formulate as minimizing a cost function
+• Produces smooth, realistic trajectories
+• Representative algorithms:
+• Trajectory optimization
+• Model predictive control (MPC)
+• Potential field
+
+4. Learning-Based Methods
+
+• Use deep learning or reinforcement learning
+• Learn policies from data or simulation
+• Algorithms:
+• Imitation learning
+• Reinforcement learning
+• Generative models
+
+AI Capstone
+
+8
+
+Key Components
+• State Space: All possible configurations
+• Start & Goal: Where you are → where you want to go
+• Obstacles: Things you must avoid
+• Cost Function: What you want to optimize (e.g., shortest path)
+• Constraints: Physical limits (e.g., joint limits)
+AI Capstone
+
+9
+
+Concept Map for Path Planning
+
+AI Capstone
+
+Configuration
+Space
+
+Path Planning as
+Search
+
+World Map
+Representation
+
+Sampling-based
+Planning
+
+10
+
+Concept Map for Path Planning
+
+AI Capstone
+
+Configuration
+Space
+
+Path Planning as
+Search
+
+World Map
+Representation
+
+Sampling-based
+Planning
+
+11
+
+Representation
+Robot and Environment
+Configuration Space
+
+AI Capstone
+
+12
+
+How to represent environment?
+• Obstacle
+• Places where the robot cannot go
+
+• Free space
+• Unoccupied space within the world
+
+• Unknown
+• Robots “might” be able to go
+• There may be unknown obstacles or the state may be unreachable
+
+AI Capstone
+
+13
+
+Configuration Space
+• The configuration of a robot: a specification of all points of a
+robot
+• The degrees of freedom of a robot: is the smallest number of
+real-valued coordinates needed to represent its configuration
+• Configuration space (C-space): is the n-dimensional space
+containing all possible configuration of a robot
+
+AI Capstone
+
+14
+
+Example: Omni-directional 2D Robot
+• Can only translate in the
+workspace, i.e., no rotation
+• Degree of freedom: 2
+
+• The configuration is a point: (x,y)
+(x,y)
+
+• we specify one point on a robot to
+define a robot’s position
+
+• What is the configuration space?
+
+AI Capstone
+
+Configuration space of Omni-directional
+2D Robot
+Configuration space:
+A n-dimensional space containing
+all possible configuration of a robot
+
+AI Capstone
+
+(x,y)
+
+Obstacle
+(x,y)
+
+Obstacles make some of the original configuration space no longer accessible
+AI Capstone
+
+17
+
+Configuration Space with Obstacles
+Free space
+
+“Configuration Space Obstacle”
+
+Configuration space obstacle: x,y locations in the configuration space that the
+robot cannot reach because of the obstacle
+
+AI Capstone
+
+Multiple Obstacles?
+Get the union of all C-space obstacle as the final C-Space obstacle
+
+AI Capstone
+
+Path Planning in Configuration Space
+•
+•
+
+AI Capstone
+
+Treat robot as a point in C-Space
+Path planning = planning a trajectory in C-Space from starting
+configuration to ending configuration
+
+Example: 2D Rigid Body
+• Can only translate and rotate
+• Degree of freedom: 3
+
+• The configuration is a point: (x, y, θ)
+• What is the configuration space?
+
+AI Capstone
+
+Configuration Space
+• The configuration of a robot: a specification of all points of a
+robot
+• The degrees of freedom of a robot: is the smallest number of
+real-valued coordinates needed to represent its configuration
+• Configuration space (C-space): is the n-dimensional space
+containing all possible configuration of a robot
+
+AI Capstone
+
+22
+
+Concept Map for Path Planning
+
+AI Capstone
+
+Configuration
+Space
+
+Path Planning as
+Search
+
+World Map
+Representation
+
+Sampling-based
+Planning
+
+23
+
+Path Planning in Configuration Space
+• Assume we are given a world map, i.e.,
+we know the location of free spaces
+and obstacles
+• How to plan a path from qinit to qgoal?
+Quiz: How to obtain the world map?
+
+AI Capstone
+
+Environment
+
+AI Capstone
+
+25
+
+Representation: Grid
+For example,
+each grid has size of
+50 cm by 50 cm
+
+Where are the free
+space and occupied
+space?
+
+AI Capstone
+
+26
+
+Representation: Occupancy Grid
+
+What is robot’s CSpace assume the
+robot has 2DoF?
+- For example,
+each grid has size of
+50 cm by 50 cm
+- A robot is of size
+40 cm by 40 cm
+
+AI Capstone
+
+27
+
+Representation: Occupancy Grid
+
+What is robot’s CSpace assume the
+robot has 2DoF?
+- For example,
+each grid has size of
+50 cm by 50 cm
+- A robot is of size
+40 cm by 40 cm
+
+AI Capstone
+
+28
+
+Representation: Occupancy Grid
+
+What is robot’s CSpace assume the
+robot has 2DoF?
+- For example,
+each grid has size of
+50 cm by 50 cm
+- A robot is of size
+40 cm by 40 cm
+
+AI Capstone
+
+29
+
+Obstacle Detection
+
+Semantic
+Segmentation
+
+Point Cloud Map
+
+AI Capstone
+
+Semantic Map
+
+30
+
+Real-World Challenges
+• Uncertainty (sensor noise)
+• Dynamic obstacles
+• Partial observability
+• Robot dynamics
+
+AI Capstone
+
+31
+
+https://www.tiktok.com/@filmtherobotsla/
+video/7263179697486417195
+
+AI Capstone
+
+32
+
+HW3
+• Semantic map (image) as occupancy grid map
+• Each pixel of a semantic map is a node
+• Adjacent nodes are connected via edges
+
+• Apply path planning algorithms to generate a sequence of
+actions from start to goal positions
+
+AI Capstone
+
+33
+
+Concept Map for Path Planning
+
+AI Capstone
+
+Configuration
+Space
+
+Path Planning as
+Search
+
+World Map
+Representation
+
+Sampling-based
+Planning
+
+34
+
+Path Planning as Search
+• Task: find a path from start vertex to goal vertex given a graph
+• Search Problem:
+• State (configurations of the world)
+• Initial state and goal test
+
+• Action (go to the adjacent node, e.g., NSEW in a grid-like map)
+• Step and path costs (e.g., 1)
+• Transition model, also called Successor (i.e., St+1 =T(St, At))
+
+• A solution is a sequence of actions (a plan) which transforms
+the initial state to a goal state
+
+AI Capstone
+
+35
+
+Uninformed vs. Informed Search
+
+goal
+
+start
+
+Uninformed search
+
+AI Capstone
+
+Informed search
+
+Search Algorithms
+• Uninformed search algorithms
+• Can only generate successors and distinguish goals from non-goals
+• Breadth-first search (BFS)
+• Depth-first search (DFS)
+• Uniform Cost Search (UCS)
+
+• Informed search algorithms
+• Strategy that knows whether one non-goal is more promising than
+another
+• A* Search
+AI Capstone
+
+37
+
+Planning on a Grid
+Grassfire Algorithm (Uninformed
+search):
+A path-planning algorithm that simulates
+fire spreading from a destination cell
+through a grid, labeling cells with their
+distance from that destination..
+BFS from the destination
+Begin by marking the destination node
+with a distance value of 0
+Slides from Prof. C.J. Taylor
+
+AI Capstone
+
+Planning on a Grid
+Grassfire Algorithm (Uninformed
+search):
+Begin by marking the destination node
+with a distance value of 0
+Continue to other adjacent grid cells
+
+Slides from Prof. C.J. Taylor
+
+AI Capstone
+
+Planning on a Grid
+Grassfire Algorithm (Uninformed
+search):
+Begin by marking the destination node
+with a distance value of 0
+Continue to other adjacent grid cells
+On every iteration the marking radiates
+outward from the destination like a fire
+spreading
+Slides from Prof. C.J. Taylor
+
+AI Capstone
+
+Planning on a Grid
+Grassfire Algorithm (Uninformed
+search):
+The distance values produced by the
+algorithm indicate the smallest number
+of steps needed to move from each
+node to the goal
+To move towards the destination from
+any node, move towards the neighbor
+with the smallest distance value
+
+AI Capstone
+
+A* Search (Informed Search)
+• A* search attempts to improve search performance by
+incorporating a heuristic function that guides the path planner
+• Heuristic functions are used to map every node in the graph to
+a non-negative value, that represents the “best guess distance”
+from that node to the goal
+• for example, Euclidean distance (L2 distance)
+
+AI Capstone
+
+Google Map Navigation
+•
+•
+
+AI Capstone
+
+How to turn the problem into a
+graph-like structure?
+What would be a good heuristic
+function?
+
+A* Search
+Initial
+position
+
+Goal
+
+3/23/21
+
+AI Capstone
+
+44
+
+A* Search
+
+AI Capstone
+
+path cost + Heuristics
+
+45
+
+AI Capstone
+
+46
+
+3/23/21
+
+AI Capstone
+
+47
+
+Live Demo
+• https://qiao.github.io/PathFinding.js/visual/
+
+AI Capstone
+
+48
+
+Start
+
+Summary
+• Configuration space with obstacles
+• Robot as a point
+
+• Turn configuration space into a graph
+• Occupancy grid
+
+• Path planning as search
+• Uninformed or informed search (A*)
+
+• Sample based path planning
+• PRM, RRT, RRT*
+
+AI Capstone
+
+49
+
+Limitation of Grid-based Methods
+• Running time increases exponentially with the dimension of the
+configuration space
+• For example, dexterous hand with 24 DoF
+
+Credit: Han Pan
+
+AI Capstone
+
+https://github.com/otaheri/MANO
+50
+
+Concept Map for Path Planning
+
+AI Capstone
+
+Configuration
+Space
+
+Path Planning as
+Search
+
+World Map
+Representation
+
+Sampling-based
+Planning
+
+51
+
+Sampling based Planning
+• Key idea:
+• Rather than exhaustively explore ALL possibilities, randomly explore a
+smaller subset of possibilities while keeping track of progress
+
+• Search for a collision-free path only by sampling points
+
+AI Capstone
+
+52
+
+Probability Roadmap (PRM)
+• Probabilistic Roadmap methods proceed in two phases :
+• Preprocessing Phase – construct a roadmap G
+• Query (Search) Phase –search a path from q_init and q_goal
+
+• The roadmap is an undirected graph G = (N, E)
+• The nodes in N are a subset of configurations of the robot sampled that
+are collision free
+• The edges in E correspond to feasible straight-line paths
+
+AI Capstone
+
+53
+
+Probability Roadmap (PRM) – Phase 1
+
+AI Capstone
+
+Probability Roadmap (PRM) – Phase 1
+
+AI Capstone
+
+Probability Roadmap (PRM) – Phase 1
+
+K nearest
+neighbor
+
+Collision
+Detection
+AI Capstone
+
+Connecting a New Sample
+
+AI Capstone
+
+●
+
+Generate randomly
+
+●
+
+The distance of neighbor R is the
+number that tells you how far you think
+you can connect to configurations by
+straight lines.
+
+Distance Function
+• Measure the distance between two points in configuration
+space
+• Common choice in 2 DoF:
+
+• Distance with angle
+• if θ1 and θ2 ∈ [0, 360°], we can use the following equation to capture
+the angular displacement
+
+AI Capstone
+
+Collision Detection
+In 2D space:
+• Uniformly sample points
+along the path
+• Check if all the points are in
+free space
+• the path is collision free
+
+In 3D space, please check Gilbert–Johnson–Keerthi distance algorithm
+AI Capstone
+
+Probability Roadmap (PRM) – Phase 2
+
+End
+Start
+
+AI Capstone
+
+Query Phase:
+Search a path given qinit and
+qgoal with the constructed
+graph
+
+Probability Roadmap (PRM) – Phase 2
+• Add these two node into
+the graph
+End
+Start
+
+• Connect possible edges to
+existing nodes
+• Perform a graph search.
+
+AI Capstone
+
+Random Sample in PRM
+It is possible to have a situation where the algorithm would fail to find a
+path even when one exists if the sampling procedure fails to generate an
+appropriate set of samples.
+Possible solution:
+1. More Samples
+2. Sample more points
+close to C-space obstacles
+
+AI Capstone
+
+https://www.youtube.com/watch?v=Ob3BIJkQJEw
+
+Probabilistically Complete
+• It is possible to have a situation where the algorithm would fail
+to find a path even when the solution exists
+• Due to inappropriate samples
+
+• If there is a route and the planner keeps adding random
+samples, it will eventually find a solution
+• Lots of samples…
+
+Can we do it differently?
+AI Capstone
+
+63
+
+Rapidly-exploring Random Tree
+(RRT)
+
+AI Capstone
+
+General Idea of RRT Algorithm
+• Search for a path from the initial configuration to the goal
+configuration by expanding a search tree iteratively
+• Instead of a general graph
+
+• For each step
+• samples a target configuration and expands the tree towards it
+• The sample can either be a random configuration or the goal
+configuration itself
+
+AI Capstone
+
+65
+
+RRT
+
+AI Capstone
+
+RRT
+
+AI Capstone
+
+RRT
+
+AI Capstone
+
+RRT
+
+AI Capstone
+
+RRT
+
+Add a stepsize
+from x_nearest
+to obtain x_new
+
+AI Capstone
+
+RRT
+
+AI Capstone
+
+RRT
+
+AI Capstone
+
+RRT
+
+AI Capstone
+
+RRT
+
+AI Capstone
+
+RRT
+
+AI Capstone
+
+RRT
+
+AI Capstone
+
+RRT
+
+AI Capstone
+
+RRT
+
+AI Capstone
+
+RRT
+
+AI Capstone
+
+RRT
+
+AI Capstone
+
+RRT
+
+AI Capstone
+
+RRT
+
+Dist(Xnew, Xnearest) <
+stepsize
+Directly add Xnew
+AI Capstone
+
+RRT
+
+AI Capstone
+
+RRT
+
+AI Capstone
+
+RRT
+
+AI Capstone
+
+RRT
+
+AI Capstone
+
+RRT
+
+AI Capstone
+
+RRT
+Collision – discard this
+sample
+
+AI Capstone
+
+RRT
+
+AI Capstone
+
+RRT
+
+AI Capstone
+
+RRT
+
+AI Capstone
+
+RRT
+
+AI Capstone
+
+How to leverage Goal information?
+• When generating a random sample, with a probability picking
+the goal instead of a random node when expanding
+
+Less samples picking the goal
+AI Capstone
+
+More samples picking the goal
+93
+
+Optimizing the Path
+• Paths generated by RRT are far from optimal and require
+additional refinement before they are usable
+• We typically get the following path
+
+AI Capstone
+
+94
+
+Optimizing the Path (RRT*)
+• A simple way is to repeatedly pick two nodes at random and
+check whether they can be connected by a straight line without
+collision (shorten a path)
+• The result is not an optimal path, but shorter and more efficient
+than the original
+
+AI Capstone
+
+95
+
+RRT vs. RRT*
+
+AI Capstone
+
+96
+
+Start
+
+Summary
+• Configuration space with obstacles
+• Robot as a point
+
+• Turn configuration space into a graph
+• Occupancy grid
+
+• Path planning as search
+• Uninformed or informed search (A*)
+
+• Sample based path planning
+• PRM, RRT, RRT*
+
+AI Capstone
+
+97
+
+AI Capstone
+
+*Dynamics: the relationship between the
+forces acting on a robot and the resulting
+motion of the robot
+
+What is the underlying control
+scheme behind the system?
+How can we model its
+dynamics*?
+
+AI Capstone
+
+System Identification
+• ToddlerBot: Open-Source ML-Compatible Humanoid Platform
+for Loco-Manipulation
+
+AI Capstone
+
+100
+https://toddlerbot.github.io/
+
+Laser Scanner Jitter
+
+AI Capstone
+
+Chen, et al., Laser Scanner
+Chen,
+JitteretCharacterization,
+al., Laser Scanner
+IS&T
+Jitter
+2013
+Characterization, IS&T 2013
+
+Mathematical Modeling
+
+AI Capstone
+
+https://drive.google.com/file/d/0B9mTQnwlYIDzVDVQUFM4
+cjZKbzQ/view?resourcekey=0-FmLYIR-YM-nm5CwO0fy3wQ
+
+Quantitative Experiments
+
+AI Capstone
+
+https://drive.google.com/file/d/0B9mTQnwlYIDzVDVQUFM4
+103
+cjZKbzQ/view?resourcekey=0-FmLYIR-YM-nm5CwO0fy3wQ
+
+
