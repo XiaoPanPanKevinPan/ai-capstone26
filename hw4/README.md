@@ -5,6 +5,8 @@ In your original ai-capstone directory, `git pull` to get new `hw4` directory.
 
 # hw4 Robot Manipulation
 
+Homework4 Document: [Link](https://docs.google.com/document/d/1K29VWRyrtk-1Y8lDYBHqhRm5T5tt8XI2F1sLEA7vJ9w/edit?usp=sharing) 
+
 ## Installation
 
 
