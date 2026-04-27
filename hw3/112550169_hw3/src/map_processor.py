@@ -1,1 +1,1 @@
-../map_processor.py
+../../map_processor.py

@@ -1,1 +1,1 @@
-../navigator.py
+../../navigator.py

@@ -23,7 +23,7 @@ def load_and_filter_map(point_path: str, color_path: str):
     # NOTE: in habitat sim, x z plane corresponds to world horizontal plane, and y is vertical.
 
     # 1. remove ceiling and floor by height
-    # - real world is ~2.5m height per floor, 
+    {# - real world is ~2.5m height per floor, 
     #   but the data contains ~4.0m height due to the floor
     # - data seems to be collected from a sensor at height 1.5m from the floor
     #   such that min(data_y) = -1.77m and max(data_y) = 2.365m
@@ -31,6 +31,7 @@ def load_and_filter_map(point_path: str, color_path: str):
     #   is 1.5m from the floor, so we assume the robot has a physical height
     #   of 1.5 + 0
     # - so, cut floor < 1.3m and ceiling > 0.0m
+    }
     ceiling_threshold = 0.3
     floor_threshold = -1.3
 
