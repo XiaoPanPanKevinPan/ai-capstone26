@@ -12,11 +12,12 @@ Homework4 Document: [Link](https://docs.google.com/document/d/1K29VWRyrtk-1Y8lDY
 
 There are two ways to create your environment(choose one for your hw4):
 
-first way:
+first way(on Glows.ai):
 1. [Glows.ai](https://docs.google.com/presentation/d/1oKdlhMkB-DIS8_hGv_97MqcMtsDmft48aCoy6GeyW1A/edit?usp=sharing)
 
-second way:
-choose one to develope your homework 4
+second way(on Local machine):
+
+choose one way to develope your homework 4
 1. Create pip environment(Ubuntu)
 ```shell
 cd hw4
