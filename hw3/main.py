@@ -108,34 +108,36 @@ def run_in_sim(start_world: Tuple[float, float], world_path: List[Tuple[float, f
     execute_waypoint_path(world_path, sim, agent, id)
 
 
+    
+def dist(p1, p2):
+    return float(np.hypot(p1[0] - p2[0], p1[1] - p2[1]))
+    
+def is_collision_free(p1, p2, occupancy_map):
+    height, width = occupancy_map.shape
+    d = dist(p1, p2)
+    steps = int(d / 1.0) + 1  # sample every 1 pixel
+    for i in range(steps + 1):
+        t = i / steps if steps > 0 else 0
+        u = p1[0] + t * (p2[0] - p1[0])
+        v = p1[1] + t * (p2[1] - p1[1])
+        iu, iv = int(round(u)), int(round(v))
+        if iu < 0 or iu >= width or iv < 0 or iv >= height:
+            return False
+        if occupancy_map[iv, iu] > 0.5: # > 0.5 means obstacle
+            return False
+    return True
+
 # Note: Goal is a directional hint. 
 #       We should stop once the surrounding meets goal_prompt
 def plan_path(start, goal_prompt, goal, occupancy_map, map_img):
     MAX_ITER = 50000
-    STEP_SIZE = 1.0 * MAP_RESOLUTION    # 1m per step
+    STEP_SIZE = 0.10 * MAP_RESOLUTION   # 1m per step
     GOAL_BIAS = 0.50                    # 50% chance to directly explore towards the goal
-    GOAL_DIST = 1.00 * MAP_RESOLUTION   # 1m radius to accept the goal
+    GOAL_DIST = 0.40 * MAP_RESOLUTION   # 1m radius to accept the goal
     
     height, width = occupancy_map.shape
     goal_color = np.array(SEMANTIC_DICTS["colors"][goal_prompt][0]) / 255.0
         # the sementic color of the goal
-    
-    def dist(p1, p2):
-        return float(np.hypot(p1[0] - p2[0], p1[1] - p2[1]))
-        
-    def is_collision_free(p1, p2):
-        d = dist(p1, p2)
-        steps = int(d / 1.0) + 1  # sample every 1 pixel
-        for i in range(steps + 1):
-            t = i / steps if steps > 0 else 0
-            u = p1[0] + t * (p2[0] - p1[0])
-            v = p1[1] + t * (p2[1] - p1[1])
-            iu, iv = int(round(u)), int(round(v))
-            if iu < 0 or iu >= width or iv < 0 or iv >= height:
-                return False
-            if occupancy_map[iv, iu] > 0.5: # > 0.5 means obstacle
-                return False
-        return True
 
     # preallocate np array as the tree
     tree_arr = np.zeros((MAX_ITER + 2, 2), dtype=float)
@@ -171,7 +173,7 @@ def plan_path(start, goal_prompt, goal, occupancy_map, map_img):
             )
             
         # 4. collision check
-        if not is_collision_free(x_nearest, x_new):
+        if not is_collision_free(x_nearest, x_new, occupancy_map):
             continue
         
         # 5. add node to tree array
@@ -210,12 +212,193 @@ def plan_path(start, goal_prompt, goal, occupancy_map, map_img):
         # 7.1. append the new_goal in the end of the path 
         #      (the simulator will try to get the closest no matter reachable or not)
         path.append(new_goal) 
-        
         print(f"RRT Success! Found a path with {len(path)} steps.")
-        return path, tree_arr[:num_nodes], parents
-                    
-    return None, None, None
 
+        # 7.2 leave obstacles
+        leave_obstacle_path = path_leave_obstacles(path, occupancy_map)
+        print(f"Path left obstacles.")
+
+        # 7.3. simplify the path
+        simple_path = simplify_path(path, occupancy_map)
+        print(f"Path simplified to {len(simple_path)} steps.")
+
+        # 7.4. leave obstacles
+        leave_obstacle_simple_path = path_leave_obstacles(simple_path, occupancy_map)
+        print(f"Path left obstacles.")
+
+        return leave_obstacle_simple_path, simple_path, leave_obstacle_path, tree_arr[:num_nodes], parents
+                    
+    return None, None, None, None, None
+
+def simplify_path(path, occupancy_map):
+    if len(path) <= 3:
+        return path
+
+    core_path = path[:-1] # keep the goal point
+    simple_path = [core_path[0]]
+    curr_idx = 0
+    
+    while curr_idx < len(core_path) - 1: # keep the last point to see the object
+        # find the furthest node that can be connected to the current node
+        for next_idx in range(len(core_path) - 1, curr_idx, -1):
+            if is_collision_free(core_path[curr_idx], core_path[next_idx], occupancy_map):
+                simple_path.append(core_path[next_idx])
+                curr_idx = next_idx
+                break
+                
+    simple_path.append(path[-1])
+    return simple_path
+    
+def path_leave_obstacles(path, occupancy_map):
+    if len(path) <= 3:
+        return path
+        
+    height, width = occupancy_map.shape
+    new_path = list(path)
+    
+    # helper: spiral search for nearest obstacle
+    def find_nearest_obstacle(p, max_r=50):
+        u0, v0 = int(round(p[0])), int(round(p[1]))
+        if occupancy_map[min(max(v0, 0), height-1), min(max(u0, 0), width-1)] > 0.5:
+            return (u0, v0)
+
+    # helper: spiral search for nearest obstacle
+    def find_nearest_obstacle(p, max_r=50):
+        u0, v0 = int(round(p[0])), int(round(p[1]))
+        if occupancy_map[min(max(v0, 0), height-1), min(max(u0, 0), width-1)] > 0.5:
+            return (u0, v0)
+
+        def find_nearest_at_r(r):
+            best_dist_sq = float('inf')
+            nearest_in_r = None
+            for du in range(-r, r+1):
+                for dv in [-r, r]:
+                    u, v = u0 + du, v0 + dv
+                    if 0 <= u < width and 0 <= v < height and occupancy_map[v, u] > 0.5:
+                        dist_sq = du**2 + dv**2
+                        if dist_sq < best_dist_sq:
+                            best_dist_sq = dist_sq
+                            nearest_in_r = (du, dv)
+            for dv in range(-r+1, r):
+                for du in [-r, r]:
+                    u, v = u0 + du, v0 + dv
+                    if 0 <= u < width and 0 <= v < height and occupancy_map[v, u] > 0.5:
+                        dist_sq = du**2 + dv**2
+                        if dist_sq < best_dist_sq:
+                            best_dist_sq = dist_sq
+                            nearest_in_r = (du, dv)
+            return nearest_in_r, best_dist_sq
+        
+        nearest = None
+        nearest_r = max_r
+        nearest_dist_sq = float('inf')
+        
+        for r in range(1, max_r):
+            pt, dist_sq = find_nearest_at_r(r)
+            if pt is not None:
+                nearest = pt
+                nearest_r = r
+                nearest_dist_sq = dist_sq
+                break
+
+        if nearest is None:
+            return None
+        
+        # prevent ignoring the nearest obstacle, seach further
+        max_search_r = min(max_r, int(nearest_dist_sq ** 0.5) + 1)
+        for r in range(nearest_r + 1, max_search_r + 1):
+            pt, dist_sq = find_nearest_at_r(r)
+            if pt is not None and dist_sq < nearest_dist_sq:
+                nearest = pt
+                nearest_dist_sq = dist_sq
+                
+        return (u0 + nearest[0], v0 + nearest[1])
+
+    # check if offset P_curr by t * N, is it collision free to P_prev and P_next
+    def check_free(t, P_curr, N, P_prev, P_next):
+        P_test = (P_curr[0] + t * N[0], P_curr[1] + t * N[1])
+        # if out of map, it's a collision
+        if not (0 <= P_test[0] < width and 0 <= P_test[1] < height):
+            return False
+        return is_collision_free(P_prev, P_test, occupancy_map) and \
+               is_collision_free(P_test, P_next, occupancy_map)
+
+    # find a segment containing the original point, and 
+    # all points except for the bounaries are collision free
+    def boundary_search(P_curr, N, P_prev, P_next, step_dir):
+        t = 0.0
+        step = 2.0 * step_dir
+        
+        # 1. exponential expansion: find an upper bound
+        while check_free(t + step, P_curr, N, P_prev, P_next):
+            t += step
+            step *= 2.0
+            if abs(t) > 500: # 防呆，不會真的跑無限遠
+                break
+                
+        # 2. binary search: find the exact boundary
+        low = t
+        high = t + step
+        while not abs(high - low) < 1.42: # ensure px level precision
+            mid = (low + high) / 2.0
+            if check_free(mid, P_curr, N, P_prev, P_next):
+                low = mid  # this mid is collision free
+            else:
+                high = mid # this mid is not collision free
+                
+        return low
+
+    # do the whole path for five times
+    for pass_idx in range(5): 
+        # don't move start point and the last two points
+        for i in range(1, len(new_path) - 2):
+            P_prev = new_path[i-1]
+            P_curr = new_path[i]
+            P_next = new_path[i+1]
+            
+            # tengent vector: (prev - next) point
+            dx = P_next[0] - P_prev[0]
+            dy = P_next[1] - P_prev[1]
+            length = np.hypot(dx, dy)
+            if length < 1e-3:
+                continue
+                
+            # find the normal vector perpendicular to the tengent vector
+            N = (-dy / length, dx / length)
+            
+            ## 1. move according to norm
+            # find the boundaries (happen to be not collision free)
+            t_pos = boundary_search(P_curr, N, P_prev, P_next, 1)
+            t_neg = boundary_search(P_curr, N, P_prev, P_next, -1)
+            
+            # take the middle of the two boundaries as the new path point
+            opt_t = (t_pos + t_neg) / 2.0
+            new_path[i] = (P_curr[0] + opt_t * N[0], P_curr[1] + opt_t * N[1])
+
+            ## 2. move leaving nearest obstacle
+            P_curr = new_path[i] # Update P_curr from Step 1
+            O1 = find_nearest_obstacle(P_curr)
+            if O1 is None:
+                continue
+
+            dx_o = P_curr[0] - O1[0]
+            dy_o = P_curr[1] - O1[1]
+            length_o = np.hypot(dx_o, dy_o)
+
+            # Only push if we are reasonably far from O1 (don't divide by zero)
+            if length_o < 1e-3:
+                continue
+
+            # same procedure as the above
+            M = (dx_o / length_o, dy_o / length_o)
+            
+            t_pos_o = boundary_search(P_curr, M, P_prev, P_next, 1)
+            t_neg_o = boundary_search(P_curr, M, P_prev, P_next, -1)
+            
+            opt_t_o = (t_pos_o + t_neg_o) / 2.0
+            new_path[i] = (P_curr[0] + opt_t_o * M[0], P_curr[1] + opt_t_o * M[1])
+            
+    return new_path
 
 def main():
     """Entry point."""
@@ -234,7 +417,7 @@ def main():
     # =============== TODO 2 ===============
     # implement RRT path planner in plan_path()
 
-    path, tree, parents = plan_path(start, goal_prompt, goal, occupancy_map, map_img)
+    path, simple_path, leave_obstacle_path, tree, parents = plan_path(start, goal_prompt, goal, occupancy_map, map_img)
     if not path:
         print("Planner could not find a path.")
         sys.exit(1)
@@ -254,7 +437,21 @@ def main():
             pt_end = (int(tree[idx][0]), int(tree[idx][1]))
             pt_start = (int(tree[parent_idx][0]), int(tree[parent_idx][1]))
             cv2.line(vis_map, pt_start, pt_end, (255, 200, 150), 1)
-            cv2.circle(vis_map, pt_end, 1, (0, 255, 255), -1)
+            cv2.circle(vis_map, pt_end, 1, (255, 255, 0), -1)
+
+    # draw the leave obstacle path (blue line) and nodes (light green)
+    for i in range(len(leave_obstacle_path) - 1):
+        pt1 = (int(leave_obstacle_path[i][0]), int(leave_obstacle_path[i][1]))
+        pt2 = (int(leave_obstacle_path[i+1][0]), int(leave_obstacle_path[i+1][1]))
+        cv2.line(vis_map, pt1, pt2, (255, 0, 0), 1)
+        cv2.circle(vis_map, pt1, 1, (175, 255, 175), -1)
+
+    # draw the simple path (yellow line) and nodes (light green)
+    for i in range(len(simple_path) - 1):
+        pt1 = (int(simple_path[i][0]), int(simple_path[i][1]))
+        pt2 = (int(simple_path[i+1][0]), int(simple_path[i+1][1]))
+        cv2.line(vis_map, pt1, pt2, (0, 255, 255), 1)
+        cv2.circle(vis_map, pt1, 1, (175, 255, 175), -1)
 
     # draw the final path (red line) and nodes (green)
     for i in range(len(path) - 1):
