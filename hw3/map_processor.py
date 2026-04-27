@@ -100,7 +100,7 @@ def load_and_filter_map(point_path: str, color_path: str):
 
 
     # 6. inflate obstacles to get occupancy map
-    robot_radius_m = 0.20 # the agent is a 0.1m-radius pillar by default, bigger for safety
+    robot_radius_m = 0.15 # the agent is a 0.1m-radius pillar by default, bigger for safety
     inflate_pixels = int(robot_radius_m * MAP_RESOLUTION)
     kernel_size = inflate_pixels * 2 + 1
     kernel_inflate = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (kernel_size, kernel_size))
