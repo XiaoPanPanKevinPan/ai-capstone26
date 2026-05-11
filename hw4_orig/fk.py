@@ -258,16 +258,90 @@ def your_fk(DH_params : dict, q, base_pos) -> np.ndarray:
     # -------------------------------------------------------------------------------- #
     
     #### your code ####
-    # Classic DH's transformation order:
-    # 1. Rotation $q$ about Z axis
-    # 2. Translation $d_i$ along Z axis
-    # 3. Translation $a_i$ along X axis
-    # 4. Rotation $alpha_i$ about X axis
-    
-    # A = ? # may be more than one line
-    # jacobian = ? # may be more than one line
 
-    raise NotImplementedError
+    ## Pure FK (DH's algorithm)
+
+    # Logic: We generate a list of coord systems.
+    # According to https://www.youtube.com/watch?v=rA9tm0gTln8
+    # after applying the DH transformation matrix, the newly 
+    # produced coord system will not necessary have its origin
+    # within the physical actuator. But we can describe the 
+    # physical position in the coords, while the z-axis is the
+    # physical rotational axis (and the physical position of
+    # intermediate joints are irrelevant to end effector's 
+    # pose estimation)
+
+    # 6 joints and transformations -> 7 coords (including the base)
+
+    def get_dh_matrix(q, d, a, alpha): 
+        # Classic DH's transformation order:
+        # 1. Rotation $q$ about Z axis
+        # 2. Translation $d$ along Z axis
+        # 3. Translation $a$ along X axis
+        # 4. Rotation $alpha$ about X axis
+
+        return np.array([
+            [np.cos(q), -np.sin(q)*np.cos(alpha),  np.sin(q)*np.sin(alpha), a*np.cos(q)],
+            [np.sin(q),  np.cos(q)*np.cos(alpha), -np.cos(q)*np.sin(alpha), a*np.sin(q)],
+            [0,          np.sin(alpha),            np.cos(alpha),           d],
+            [0,          0,                        0,                       1]
+        ])
+
+    # A is a transformation matrix under homogeneous coordinate
+    # representing a coordinate system relative to the base coord system
+    # containing the orientation [0:3][0:3], the position [0:3][3],
+    # and the homogenous properties [3][0:4] = <0, 0, 0, 1>
+    #
+    # Note: we don't need to store such a list for jacobian calculation
+    # in pure fk. But this function will be called again in ik, so we 
+    # calc it here.
+    A_list = [A] 
+
+    # For the 6 joints, calculate their local (frame) coord sys one by one
+    for i in range(6):
+        # Get the info of i-th joint
+        q_i = q[i] # often called theta
+        d_i = DH_params[i]['d']
+        a_i = DH_params[i]['a']
+        alpha_i = DH_params[i]['alpha']
+        
+        # make a dh matrix T_i
+        T_i = get_dh_matrix(q_i, d_i, a_i, alpha_i)
+        
+        # calculate the next coord system:
+        # relative to current coord system -> relative to base coord system
+        A = A @ T_i
+        
+        # store the coord system
+        A_list.append(A)
+
+    # thou local coord origin may not be the physical joint's position, 
+    # but according to ur5.urdf, 6-th joint has a physical position 
+    # at (0, 0, 0) rel to the local (frame) coord sys, so there is no
+    # need to adjust the translation part furthermore
+
+    ## Calc Jacobian
+    # Jacobian is a 6x6 matrix indicating if we move each joints, how much 
+    # do they contribute such that we can get closer to the target pose.
+    # jacobian[0:3][i]: The linear velocity (x, y, z) for joint_i
+    # jacobian[4:6][i]: The angular velocity that joint_i rotates
+
+    p_end = A_list[-1][:3, 3]
+    for i in range(6):
+        # get the current pose of coord_i (effectively equivalent to joint_i)
+        A_i = A_list[i]
+        z_axis = A_i[:3, 2] # the vector parallel to rotational center axis
+        p_i = A_i[:3, 3]    # the coord sys's origin's position rel to base
+
+        # get the linear velocity
+        J_v = np.cross(z_axis, (p_end - p_i))
+
+        # get the angular velocity
+        J_w = z_axis
+
+        jacobian[:3, i] = J_v
+        jacobian[3:, i] = J_w
+
     # hint : 
     # https://automaticaddison.com/the-ultimate-guide-to-jacobian-matrices-for-robotics/
     
