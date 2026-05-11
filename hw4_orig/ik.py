@@ -140,7 +140,34 @@ def your_ik(new_pose : list or tuple or np.ndarray,
     # 3. You may use some hyper parameters (i.e., step rate) in optimization loops
 
     ###################
+    new_pose = np.asarray(new_pose)
+    dh_params = get_ur5_DH_params()
     
+    step_size = 0.1
+    for _ in range(max_iters):
+        # get the current pose & jacobian matrix
+        curr_pose, J = your_fk(dh_params, tmp_q, base_pos)
+
+        # get the error
+        pos_error = new_pose[:3] - curr_pose[:3]
+
+        rotMat_target = R.from_quat(new_pose[3:]).as_matrix()
+        rotMat_curr = R.from_quat(curr_pose[3:]).as_matrix()
+        rotMat_error = rotMat_target @ rotMat_curr.T
+        rot_error = R.from_matrix(rotMat_error).as_rotvec()
+
+        error = np.concatenate([pos_error, rot_error])
+
+        # check if the end pose is reached
+        if np.linalg.norm(error) < stop_thresh:
+            break
+        
+        # use the pseudo-inverse method with jacobian to calc
+        # the small rotation this step
+        # delta_q = step_size * (J @ error).T @ np.linalg.inv(J @ J.T)
+        delta_q = step_size * (pinv(J) @ error)
+        tmp_q = tmp_q + delta_q
+        tmp_q = np.clip(tmp_q, joint_limits[:, 0], joint_limits[:, 1])
 
     return list(tmp_q) # 6 DoF
 
