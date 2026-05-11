@@ -258,15 +258,56 @@ def your_fk(DH_params : dict, q, base_pos) -> np.ndarray:
     # -------------------------------------------------------------------------------- #
     
     #### your code ####
+    T = A.copy()
+    z_axes = []
+    origins = []
     
-
-    # A = ? # may be more than one line
-    # jacobian = ? # may be more than one line
-
-    raise NotImplementedError
-    # hint : 
-    # https://automaticaddison.com/the-ultimate-guide-to-jacobian-matrices-for-robotics/
+    # Store initial z-axis and origin (base frame)
+    # Joint 1 rotates around the base z-axis
+    z_axes.append(T[:3, 2])
+    origins.append(T[:3, 3])
     
+    # Iterate through each joint to build the kinematic chain
+    for i in range(6):
+        theta = q[i]
+        a = DH_params[i]['a']
+        d = DH_params[i]['d']
+        alpha = DH_params[i]['alpha']
+        
+        ct = np.cos(theta)
+        st = np.sin(theta)
+        ca = np.cos(alpha)
+        sa = np.sin(alpha)
+        
+        # Classic DH transform matrix A_i
+        # T_i = Rot_z(theta) * Trans_z(d) * Trans_x(a) * Rot_x(alpha)
+        A_i = np.array([
+            [ct, -st*ca,  st*sa, a*ct],
+            [st,  ct*ca, -ct*sa, a*st],
+            [0,   sa,     ca,    d   ],
+            [0,   0,      0,     1   ]
+        ], dtype=np.float64)
+        
+        T = T @ A_i
+        
+        # Store the axis of rotation and origin for the NEXT joint
+        if i < 5:
+            z_axes.append(T[:3, 2])
+            origins.append(T[:3, 3])
+            
+    # End-effector position in world/base frame
+    p_end = T[:3, 3]
+    
+    # Compute Geometric Jacobian
+    for i in range(6):
+        z = z_axes[i]
+        p = origins[i]
+        # Jv_i = z_i x (p_end - p_i)
+        jacobian[:3, i] = np.cross(z, (p_end - p))
+        # Jw_i = z_i
+        jacobian[3:, i] = z
+        
+    A = T
     ###############################################
 
     # adjustment don't touch
