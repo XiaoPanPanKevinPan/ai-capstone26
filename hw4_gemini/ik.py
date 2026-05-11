@@ -130,15 +130,45 @@ def your_ik(new_pose : list or tuple or np.ndarray,
     # -------------------------------------------------------------------------------- #
     
     #### your code ####
-
-    # TODO: update tmp_q using an iterative optimization loop.
-    # tmp_q = ? # may be more than one line
+    q = tmp_q.copy()
+    dh_params = get_ur5_DH_params()
     
-    # hint : 
-    # 1. You may use `your_fk` function and jacobian matrix to do this
-    # 2. Be careful when computing the delta x
-    # 3. You may use some hyper parameters (i.e., step rate) in optimization loops
+    # Hyperparameters for the iterative IK
+    step_rate = 0.5
+    
+    for i in range(max_iters):
+        # 1. Compute current pose and Jacobian
+        pose, J = your_fk(dh_params, q, base_pos)
+        
+        # 2. Compute position error
+        err_pos = np.asarray(new_pose[:3]) - pose[:3]
+        
+        # 3. Compute orientation error
+        # Target rotation matrix
+        R_target = R.from_quat(new_pose[3:]).as_matrix()
+        # Current rotation matrix
+        R_curr = R.from_quat(pose[3:]).as_matrix()
+        
+        # The rotation needed to go from current to target: R_rel * R_curr = R_target => R_rel = R_target * R_curr.T
+        R_rel = R_target @ R_curr.T
+        err_rot = R.from_matrix(R_rel).as_rotvec()
+        
+        # Combine into a 6D error vector
+        err_6d = np.concatenate([err_pos, err_rot])
+        
+        # 4. Convergence check
+        if np.linalg.norm(err_6d) < stop_thresh:
+            break
+            
+        # 5. Update joint angles using pseudo-inverse of Jacobian
+        # delta_q = J_pinv * delta_x
+        delta_q = pinv(J) @ err_6d
+        q += step_rate * delta_q
+        
+        # 6. Enforce joint limits
+        q = np.clip(q, joint_limits[:, 0], joint_limits[:, 1])
 
+    tmp_q = q
     ###################
     
 
