@@ -2,3 +2,6 @@
 [submodule "hw0/habitat-lab"]
 	path = hw0/habitat-lab
 	url = https://github.com/facebookresearch/habitat-lab.git
+[submodule "hw5"]
+	path = hw5
+	url = https://github.com/NYCU-CS-AI-Capstone-2026-Group7/semantic-affordance-grounding
